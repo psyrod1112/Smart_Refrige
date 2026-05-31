@@ -4,7 +4,7 @@ import threading
 from ocr import run_ocr, parse_expiry
 import serial_handler
 
-SCAN_TIMEOUT  = 30
+SCAN_TIMEOUT  = 300
 CAPTURE_PATH  = "/tmp/scan.jpg"
 
 current_expiry = None
@@ -12,7 +12,7 @@ scan_active    = False
 _lock = threading.Lock()
 
 def init():
-    print("[Camera] 초기화 완료 (rpicam-still 사용)")
+    print("[Camera] Initialized (rpicam-still)")
     threading.Thread(target=start_scan, daemon=True).start()
 
 def start_scan():
@@ -20,17 +20,17 @@ def start_scan():
 
     with _lock:
         if scan_active:
-            print("[Camera] 이미 스캔 중")
+            print("[Camera] Already scanning")
             return
         scan_active    = True
         current_expiry = None
 
-    print("[Camera] 스캔 시작 (최대 30초)")
+    print("[Camera] Scan started (timeout: 300s)")
     start = time.time()
 
     while scan_active:
         if time.time() - start > SCAN_TIMEOUT:
-            print("[Camera] 타임아웃")
+            print("[Camera] Timeout")
             serial_handler.send("LED_R:0")
             serial_handler.send("OLED:Timeout")
             scan_active = False
@@ -42,22 +42,22 @@ def start_scan():
         )
 
         if result.returncode != 0:
-            print(f"[Camera] 촬영 실패: {result.stderr.decode()}")
+            print(f"[Camera] Capture failed: {result.stderr.decode()}")
             time.sleep(1)
             continue
 
         text = run_ocr(CAPTURE_PATH)
-        print(f"[OCR] 인식 텍스트: {repr(text)}")
+        print(f"[OCR] Recognized text: {repr(text)}")
 
         date = parse_expiry(text)
 
         if date is None:
-            print("[Camera] 인식 실패 → 재시도")
+            print("[Camera] Parse failed, retrying")
             serial_handler.send("SCAN_FAIL")
             time.sleep(1)
             continue
 
-        print(f"[Camera] 유통기한 인식 성공: {date.date()}")
+        print(f"[Camera] Expiry date found: {date.date()}")
         current_expiry = date
         scan_active    = False
         serial_handler.send("LED_R:0")
