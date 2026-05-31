@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/food_item.dart';
 
 // ── 라즈베리파이 IP 주소 (같은 Wi-Fi 기준, 고정 IP 권장) ──────
-const String _baseUrl = 'http://192.168.50.153:5000';
+const String _baseUrl = 'http://192.168.137.97:5000';
 
 // ── 식품 목록 ──────────────────────────────────────────────────
 Future<List<FoodItem>> fetchFoods() async {
