@@ -1,5 +1,6 @@
 import serial
 import threading
+import time
 
 SERIAL_PORT = "/dev/ttyACM0"   # Pi에서 Arduino 연결 포트 (ls /dev/tty* 로 확인)
 BAUD_RATE   = 9600
@@ -22,6 +23,7 @@ def init(on_door_change, on_switch, on_temp_hum, on_close_weight=None):
     _on_close_weight = on_close_weight
 
     _ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+    time.sleep(2)
     t = threading.Thread(target=_read_loop, daemon=True)
     t.start()
     print(f"[Serial] 연결됨: {SERIAL_PORT}")
