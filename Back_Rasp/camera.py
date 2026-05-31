@@ -22,6 +22,9 @@ def start_scan():
         if scan_active:
             print("[Camera] Already scanning")
             return
+        if current_expiry is not None:
+            print("[Camera] Expiry already set, waiting for weight")
+            return
         scan_active    = True
         current_expiry = None
 

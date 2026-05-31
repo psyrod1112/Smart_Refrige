@@ -37,30 +37,21 @@ def run_ocr(image_path: str) -> str:
         return ""
 
 def parse_expiry(text: str) -> datetime | None:
-    """
-    텍스트에서 유통기한 날짜 추출.
-    지원 포맷:
-      2025.12.31 / 25.12.31         (년.월.일)
-      2025/12/31 / 25-12-31         (구분자 무관)
-      2025.12.31 15:30              (시각 포함 → 날짜만 사용)
-      2025.12 / 25.12               (일 없음 → 해당 월 말일로)
-      20251231 / 251231             (구분자 없는 숫자)
-    """
-    sep = r'[.\-/]'
+    # sep allows optional spaces after separator (e.g. "2026. 7. 21")
+    sep = r'[.\-/,]\s*'
 
-    # 우선순위 순서: 구체적인 패턴 먼저
     patterns = [
-        # YYYY.MM.DD (시각 포함 허용)
+        # YYYY.MM.DD with optional spaces/time
         (r'(\d{4})' + sep + r'(\d{1,2})' + sep + r'(\d{1,2})(?:\s+\d{1,2}:\d{2})?', True),
-        # YY.MM.DD (시각 포함 허용)
+        # YY.MM.DD
         (r'(\d{2})' + sep + r'(\d{1,2})' + sep + r'(\d{1,2})(?:\s+\d{1,2}:\d{2})?', True),
         # YYYYMMDD
         (r'(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)', True),
         # YYMMDD
         (r'(?<!\d)(\d{2})(\d{2})(\d{2})(?!\d)', True),
-        # YYYY.MM (일 없음)
+        # YYYY.MM (no day)
         (r'(\d{4})' + sep + r'(\d{1,2})(?!' + sep + r')', False),
-        # YY.MM (일 없음)
+        # YY.MM (no day)
         (r'(\d{2})' + sep + r'(\d{1,2})(?!' + sep + r')', False),
     ]
 
@@ -68,28 +59,37 @@ def parse_expiry(text: str) -> datetime | None:
         m = re.search(pattern, text)
         if not m:
             continue
-
         y  = int(m.group(1))
         mo = int(m.group(2))
         d  = int(m.group(3)) if has_day else None
-
         if y < 100:
             y += 2000
-
-        # 말도 안 되는 날짜 필터 (연도 범위 넉넉하게)
         if not (2000 <= y <= 2040 and 1 <= mo <= 12):
             continue
-
-        # 일(day) 없는 포맷 → 해당 월의 마지막 날로
         if d is None:
             d = calendar.monthrange(y, mo)[1]
-
         if not (1 <= d <= 31):
             continue
-
         try:
             return datetime(y, mo, d)
         except ValueError:
-            continue   # 2월 30일 같은 불가능한 날짜
+            continue
+
+    # Fallback: OCR scrambled the order — find 4-digit year then guess month/day
+    m = re.search(r'\b(20\d{2})\b', text)
+    if m:
+        y = int(m.group(1))
+        if 2000 <= y <= 2040:
+            nums = [int(n) for n in re.findall(r'\b(\d{1,2})\b', text)]
+            months = [n for n in nums if 1 <= n <= 12]
+            days   = [n for n in nums if 1 <= n <= 31]
+            for mo in months:
+                for d in days:
+                    if d == mo:
+                        continue
+                    try:
+                        return datetime(y, mo, d)
+                    except ValueError:
+                        continue
 
     return None
