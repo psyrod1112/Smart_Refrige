@@ -10,54 +10,12 @@ _last_closed_weight = None
 WEIGHT_CHANGE_THRESHOLD = 30.0
 
 # ── 보관 구역 판단 (온도 기반) ─────────────────────────────────
-def _storage_from_temp(temp: float) -> str:
-    if temp == -99:
-        return "냉장"        # 온습도 오류 시 기본값
-    if temp < -5:
-        return "냉동"
-    if temp < 12:
-        return "냉장"
-    return "상온"
-
 # ── Serial 콜백 ───────────────────────────────────────────────
 def on_door_change(_is_open: bool):
     pass
 
 def on_switch(weight: float, temp: float, _hum: float):
-    """⑩ 핵심 로직 — 무게 + 온도 + 유통기한 → DB 저장 → FEFO → OLED"""
-    expiry = camera.current_expiry
-    if expiry is None:
-        print("[Switch] OCR 결과 없음, 무시")
-        return
-
-    food_type = db.get_food_type_by_weight(weight)
-    storage   = _storage_from_temp(temp)
-    slot      = fifo.calc_slot(expiry)
-
-    item_id = db.insert_food_item(
-        food_type_id   = food_type["id"],
-        food_type_name = food_type["name"],
-        expired_date   = expiry,
-        weight         = weight,
-        storage        = storage,
-        slot_number    = slot
-    )
-
-    print(f"[입고] id={item_id} | {food_type['name']} | {storage} | "
-          f"유통기한={expiry.date()} | 무게={weight}g | 슬롯={slot}")
-
-    # ⑪ Arduino OLED
-    serial_handler.send(f"OLED:Slot {slot}")
-
-    # ⑪ FCM 푸시
-    try:
-        from fcm import send_push
-        send_push("입고 완료",
-                  f"{food_type['name']} | 유통기한 {expiry.strftime('%Y.%m.%d')} | {slot}번 슬롯")
-    except Exception as e:
-        print(f"[FCM] 전송 실패: {e}")
-
-    camera.current_expiry = None   # 상태 리셋
+    print(f"[Switch] 무게={weight}g, 온도={temp}°C (비활성화됨)")
 
 def on_temp_hum(temp: float, hum: float):
     global _last_temp, _last_hum
@@ -138,5 +96,6 @@ if __name__ == "__main__":
     camera.init()
     serial_handler.init(on_door_change, on_switch, on_temp_hum, on_close_weight)
     gpio_handler.init(on_button_press=camera.start_scan)
+    serial_handler.send("LED_R:1")
     print("[Server] Flask 시작 — http://0.0.0.0:5000")
     app.run(host="0.0.0.0", port=5000, debug=False)
