@@ -11,9 +11,10 @@ class ManualIncomingScreen extends StatefulWidget {
 
 class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
   final _nameController = TextEditingController();
-  final _quantityController = TextEditingController();
+  final _quantityController = TextEditingController(text: '1');
   DateTime? _expiryDate;
   String _selectedCategory = '냉장';
+  bool _submitting = false;
 
   final List<String> _categories = ['냉장', '냉동', '상온'];
 
@@ -35,9 +36,18 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
   }
 
   Future<void> _submit() async {
-    if (_nameController.text.isEmpty) {
+    final name = _nameController.text.trim();
+    final quantity = int.tryParse(_quantityController.text.trim()) ?? 0;
+
+    if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('식품명을 입력해주세요.')),
+      );
+      return;
+    }
+    if (quantity <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('수량은 1개 이상이어야 합니다.')),
       );
       return;
     }
@@ -47,23 +57,32 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
       );
       return;
     }
+
+    final expiredDate =
+        '${_expiryDate!.year}-${_expiryDate!.month.toString().padLeft(2, '0')}-${_expiryDate!.day.toString().padLeft(2, '0')}';
+
+    setState(() => _submitting = true);
     try {
       await context.read<FoodProvider>().addManual(
-        expiredDate:  '${_expiryDate!.year}-${_expiryDate!.month.toString().padLeft(2,'0')}-${_expiryDate!.day.toString().padLeft(2,'0')}',
-        storage:      _selectedCategory,
-        foodTypeName: _nameController.text,
-      );
+            expiredDate: expiredDate,
+            storage: _selectedCategory,
+            foodTypeName: name,
+            quantity: quantity,
+          );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${_nameController.text} 입고 완료'), backgroundColor: Colors.green),
+        SnackBar(content: Text('$name 입고 완료'), backgroundColor: Colors.green),
       );
       _nameController.clear();
-      _quantityController.clear();
+      _quantityController.text = '1';
       setState(() => _expiryDate = null);
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('오류: $e'), backgroundColor: Colors.red),
       );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -83,19 +102,21 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
           children: [
             Card(
               elevation: 0,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               color: colorScheme.surfaceContainerLow,
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('식품 정보 입력',
-                        style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurface)),
+                    Text(
+                      '식품 정보 입력',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
                     const SizedBox(height: 20),
                     TextField(
                       controller: _nameController,
@@ -103,7 +124,8 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
                         labelText: '식품명',
                         prefixIcon: const Icon(Icons.fastfood_outlined),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         filled: true,
                       ),
                     ),
@@ -116,7 +138,8 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
                         prefixIcon: const Icon(Icons.numbers),
                         suffixText: '개',
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         filled: true,
                       ),
                     ),
@@ -127,15 +150,14 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
                         labelText: '보관 구역',
                         prefixIcon: const Icon(Icons.category_outlined),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         filled: true,
                       ),
                       items: _categories
-                          .map((c) =>
-                              DropdownMenuItem(value: c, child: Text(c)))
+                          .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                           .toList(),
-                      onChanged: (v) =>
-                          setState(() => _selectedCategory = v!),
+                      onChanged: (v) => setState(() => _selectedCategory = v!),
                     ),
                     const SizedBox(height: 14),
                     InkWell(
@@ -144,10 +166,10 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
                       child: InputDecorator(
                         decoration: InputDecoration(
                           labelText: '유통기한',
-                          prefixIcon:
-                              const Icon(Icons.calendar_today_outlined),
+                          prefixIcon: const Icon(Icons.calendar_today_outlined),
                           border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           filled: true,
                         ),
                         child: Text(
@@ -155,9 +177,10 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
                               ? '날짜 선택'
                               : '${_expiryDate!.year}.${_expiryDate!.month.toString().padLeft(2, '0')}.${_expiryDate!.day.toString().padLeft(2, '0')}',
                           style: TextStyle(
-                              color: _expiryDate == null
-                                  ? colorScheme.onSurface.withOpacity(0.4)
-                                  : colorScheme.onSurface),
+                            color: _expiryDate == null
+                                ? colorScheme.onSurface.withOpacity(0.4)
+                                : colorScheme.onSurface,
+                          ),
                         ),
                       ),
                     ),
@@ -169,16 +192,18 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
             SizedBox(
               height: 52,
               child: ElevatedButton.icon(
-                onPressed: _submit,
+                onPressed: _submitting ? null : _submit,
                 icon: const Icon(Icons.add_box_outlined),
-                label: const Text('입고 등록',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                label: const Text(
+                  '입고 등록',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: colorScheme.primary,
                   foregroundColor: colorScheme.onPrimary,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
             ),

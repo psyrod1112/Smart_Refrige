@@ -1,101 +1,266 @@
+from datetime import datetime, date
+import threading
+import time
+
 from flask import Flask, jsonify, request
-import db, fifo, camera, serial_handler, gpio_handler
+
+import camera
+import db
+import fcm
+import fifo
+import serial_handler
+
+try:
+    import gpio_handler
+except Exception as e:
+    gpio_handler = None
+    _gpio_import_error = e
+else:
+    _gpio_import_error = None
 
 app = Flask(__name__)
 
-# ── 공유 상태 ──────────────────────────────────────────────────
 _last_temp = None
-_last_hum  = None
+_last_hum = None
 _last_closed_weight = None
+_last_expiry_alert_date = None
+
+
+def _ts() -> str:
+    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+
+@app.before_request
+def _log_req():
+    if request.method in ("POST", "PUT") and request.is_json:
+        print(f"[{_ts()}][HTTP] {request.method} {request.path} body={request.get_json(silent=True)}")
+    else:
+        print(f"[{_ts()}][HTTP] {request.method} {request.path}")
+
+
+@app.after_request
+def _log_resp(resp):
+    print(f"[{_ts()}][HTTP] -> {resp.status_code} {request.path}")
+    return resp
+
 WEIGHT_CHANGE_THRESHOLD = 30.0
+EXPIRY_ALERT_INTERVAL_SEC = 60 * 60
 
-# ── 보관 구역 판단 (온도 기반) ─────────────────────────────────
-# ── Serial 콜백 ───────────────────────────────────────────────
-def on_door_change(_is_open: bool):
-    pass
 
-def on_switch(weight: float, temp: float, _hum: float):
-    print(f"[Switch] 무게={weight}g, 온도={temp}°C (비활성화됨)")
+def _storage_from_temp(temp: float) -> str:
+    if temp == -99:
+        return "냉장"
+    if temp < -5:
+        return "냉동"
+    if temp < 12:
+        return "냉장"
+    return "상온"
+
+
+def _send_push(title: str, body: str):
+    threading.Thread(target=fcm.send_push, args=(title, body), daemon=True).start()
+
+
+def _save_incoming(expiry: datetime, weight: float, temp: float, image_id: str = "NONE"):
+    food_type = db.get_food_type_by_weight(weight)
+    storage = _storage_from_temp(temp)
+    slot = fifo.calc_slot(expiry)
+    item_id = db.insert_food_item(
+        food_type_id=food_type["id"],
+        food_type_name=food_type["name"],
+        expired_date=expiry,
+        weight=weight,
+        storage=storage,
+        slot_number=slot,
+        image_id=image_id,
+        quantity=1,
+    )
+    return {
+        "id": item_id,
+        "slot": slot,
+        "food_type": food_type["name"],
+        "storage": storage,
+        "expired_date": expiry.strftime("%Y-%m-%d"),
+        "weight": weight,
+    }
+
+
+def on_door_change(is_open: bool):
+    state = "open" if is_open else "closed"
+    print(f"[Door] {state}")
+
+
+def on_switch(weight: float, temp: float, hum: float):
+    global _last_temp, _last_hum
+    _last_temp, _last_hum = temp, hum
+
+    expiry = camera.current_expiry
+    if expiry is None:
+        print("[Switch] Ignored: no OCR expiry is waiting")
+        serial_handler.send("OLED:Scan first")
+        return
+
+    saved = _save_incoming(expiry, weight, temp)
+    camera.clear_expiry()
+    serial_handler.send(f"OLED:Slot {saved['slot']}")
+    serial_handler.send("BUZZER")
+    print(
+        "[Switch] Saved incoming "
+        f"id={saved['id']} type={saved['food_type']} "
+        f"expiry={saved['expired_date']} weight={weight:.1f}g slot={saved['slot']}"
+    )
+    _send_push(
+        "입고 완료",
+        f"{saved['food_type']}이(가) {saved['slot']}번 슬롯에 저장되었습니다.",
+    )
+
 
 def on_temp_hum(temp: float, hum: float):
     global _last_temp, _last_hum
     _last_temp, _last_hum = temp, hum
+
 
 def on_close_weight(weight: float):
     global _last_closed_weight
 
     if _last_closed_weight is None:
         _last_closed_weight = weight
-        print(f"[Weight] 기준 닫힘 무게 저장: {weight:.1f}g")
+        print(f"[Weight] Base weight saved: {weight:.1f}g")
         return
 
     delta = weight - _last_closed_weight
     _last_closed_weight = weight
 
     if abs(delta) < WEIGHT_CHANGE_THRESHOLD:
+        print(f"[Weight] No significant change: delta={delta:+.1f}g")
         return
-    if delta < 0:
-        print(f"[출고 의심] 냉장고 무게 {-delta:.1f}g 감소")
-    else:
-        print(f"[입고/증가 감지] 냉장고 무게 {delta:.1f}g 증가")
 
-# ── Flask REST API ────────────────────────────────────────────
+    if delta < 0:
+        item = db.mark_next_outgoing("consumed")
+        if item is None:
+            print(f"[Weight] Outgoing detected ({-delta:.1f}g), but no stored item exists")
+            _send_push("출고 감지", f"무게가 {-delta:.0f}g 줄었지만 보관 목록이 비어 있습니다.")
+            return
+
+        print(
+            "[Weight] Auto outgoing "
+            f"id={item['id']} type={item.get('food_type_name', '')} delta={delta:+.1f}g"
+        )
+        _send_push(
+            "출고 감지",
+            f"{item.get('food_type_name', '식품')}이(가) 출고 처리되었습니다.",
+        )
+    else:
+        print(f"[Weight] Incoming-like increase detected: +{delta:.1f}g")
+        _send_push(
+            "무게 증가 감지",
+            "새 식품이 들어온 것 같습니다. OCR 스캔 후 등록을 완료해주세요.",
+        )
+
+
 @app.route("/foods", methods=["GET"])
 def get_foods():
     return jsonify(db.get_all_stored())
 
+
 @app.route("/foods", methods=["POST"])
 def add_food_manual():
-    """수동 입고 — Flutter 앱에서 호출"""
-    data = request.json
+    data = request.json or {}
     try:
-        from datetime import datetime as dt
-        expiry         = dt.strptime(data["expired_date"], "%Y-%m-%d")
-        weight         = float(data.get("weight", 0))
-        storage        = data.get("storage", "냉장")
-        food_type_id   = data.get("food_type_id")
+        expiry = datetime.strptime(data["expired_date"], "%Y-%m-%d")
+        weight = float(data.get("weight", 0))
+        quantity = max(1, int(data.get("quantity", 1)))
+        storage = data.get("storage", "냉장")
+        food_type_id = data.get("food_type_id")
         food_type_name = data.get("food_type_name", "수동입고")
-        slot           = fifo.calc_slot(expiry)
+        slot = fifo.calc_slot(expiry)
 
         item_id = db.insert_food_item(
-            food_type_id=food_type_id, food_type_name=food_type_name,
-            expired_date=expiry, weight=weight, storage=storage,
-            slot_number=slot, image_id="NONE"
+            food_type_id=food_type_id,
+            food_type_name=food_type_name,
+            expired_date=expiry,
+            weight=weight,
+            storage=storage,
+            slot_number=slot,
+            image_id="NONE",
+            quantity=quantity,
         )
+        _send_push("수동 입고 완료", f"{food_type_name}이(가) {slot}번 슬롯에 저장되었습니다.")
         return jsonify({"id": item_id, "slot": slot}), 201
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
 
+
 @app.route("/foods/<int:item_id>", methods=["PUT"])
 def update_food(item_id):
-    """출고 처리"""
-    status = request.json.get("status", "consumed")
+    data = request.json or {}
+    status = data.get("status", "consumed")
     db.update_status(item_id, status)
+    _send_push("출고 완료", f"식품 #{item_id} 상태가 {status}(으)로 변경되었습니다.")
     return jsonify({"ok": True})
+
 
 @app.route("/food_types", methods=["GET"])
 def get_food_types():
     return jsonify(db.get_all_food_types())
 
+
 @app.route("/food_types/<int:type_id>", methods=["PUT"])
 def update_food_type(type_id):
-    """FoodType 이름 변경"""
-    name = request.json.get("name", "")
+    name = (request.json or {}).get("name", "")
     if not name:
         return jsonify({"error": "name required"}), 400
     db.update_food_type_name(type_id, name)
     return jsonify({"ok": True})
 
+
 @app.route("/dashboard", methods=["GET"])
 def dashboard():
     return jsonify(db.get_dashboard(_last_temp, _last_hum))
 
-# ── 서버 시작 ─────────────────────────────────────────────────
+
+@app.route("/scan/start", methods=["POST"])
+def start_scan():
+    threading.Thread(target=camera.start_scan, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+def _expiry_alert_loop():
+    global _last_expiry_alert_date
+    while True:
+        try:
+            today = date.today()
+            if _last_expiry_alert_date != today:
+                count = db.get_dashboard(_last_temp, _last_hum)["expiring_soon"]
+                if count > 0:
+                    _send_push("유통기한 알림", f"{count}개 식품의 유통기한이 3일 이내입니다.")
+                _last_expiry_alert_date = today
+        except Exception as e:
+            print(f"[ExpiryAlert] Failed: {e}")
+        time.sleep(EXPIRY_ALERT_INTERVAL_SEC)
+
+
 if __name__ == "__main__":
     db.init_db()
-    camera.init()
-    serial_handler.init(on_door_change, on_switch, on_temp_hum, on_close_weight)
-    gpio_handler.init(on_button_press=camera.start_scan)
-    serial_handler.send("LED_R:1")
-    print("[Server] Flask 시작 — http://0.0.0.0:5000")
+    threading.Thread(target=_expiry_alert_loop, daemon=True).start()
+
+    try:
+        camera.init()
+    except Exception as e:
+        print(f"[Camera] Init failed: {e}. Running without camera.")
+
+    try:
+        serial_handler.init(on_door_change, on_switch, on_temp_hum, on_close_weight)
+        serial_handler.send("LED_R:1")
+    except Exception as e:
+        print(f"[Serial] Init failed: {e}. Running without serial.")
+
+    try:
+        if gpio_handler is None:
+            raise RuntimeError(_gpio_import_error)
+        gpio_handler.init(on_button_press=camera.start_scan)
+    except Exception as e:
+        print(f"[GPIO] Init failed: {e}. Running without GPIO.")
+
+    print("[Server] Flask started -- http://0.0.0.0:5000")
     app.run(host="0.0.0.0", port=5000, debug=False)

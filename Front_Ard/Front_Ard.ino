@@ -42,8 +42,8 @@ const unsigned long DOOR_MIN_MS  = 1000;
 unsigned long lastDistRead   = 0;
 const byte CMD_BUFFER_SIZE = 32;
 const unsigned long CLOSE_WEIGHT_SETTLE_MS = 800;
-const float DOOR_CLOSED_MAX_CM = 20.0f;
-const float DOOR_OPEN_MIN_CM   = 30.0f;
+const float DOOR_CLOSED_MAX_CM = 5.0f;
+const float DOOR_OPEN_MIN_CM   = 10.0f;
 const unsigned long DIST_INTERVAL = 200;  // 초음파는 200ms마다만 읽기
 
 // ── 프로토타입
@@ -76,12 +76,16 @@ void setup() {
     oled.setTextColor(SSD1306_WHITE);
     showOled(F("Ready"));
   }
+  Serial.print(F("[LOG] OLED ")); Serial.println(oledReady ? F("OK") : F("FAIL"));
 
   scale.begin(HX711_DT, HX711_SCK);
   scale.set_scale(20.f);
   scale.tare();
+  Serial.println(F("[LOG] HX711 tare OK"));
 
   dht.begin();
+  Serial.println(F("[LOG] DHT begin"));
+  Serial.println(F("[LOG] setup done"));
 }
 
 // ──────────────────────────────────────────
@@ -105,6 +109,11 @@ void loop() {
       bool wasDoorOpen = isDoorOpen;
       isDoorOpen     = nextDoorOpen;
       lastDoorChange = millis();
+      Serial.print(F("[LOG] door "));
+      Serial.print(isDoorOpen ? F("OPEN") : F("CLOSE"));
+      Serial.print(F(" dist="));
+      Serial.print(dist, 1);
+      Serial.println(F("cm"));
       if (isDoorOpen) {
         Serial.println(F("DOOR:1"));
       } else {
@@ -136,6 +145,12 @@ void loop() {
       float t = dht.readTemperature();
       float h = dht.readHumidity();
       beep(150);
+      Serial.print(F("[LOG] switch w="));
+      Serial.print(w, 1);
+      Serial.print(F("g t="));
+      Serial.print(isnan(t) ? -99.0f : t, 1);
+      Serial.print(F(" h="));
+      Serial.println(isnan(h) ? -99.0f : h, 1);
       // 온습도 유효하면 같이 전송, 아니면 기본값 -99
       if (!isnan(t) && !isnan(h)) {
         Serial.print(F("SWITCH:"));
@@ -150,6 +165,7 @@ void loop() {
         Serial.println(F(",T:-99,H:-99"));
       }
       currentState = IDLE;
+      Serial.println(F("[LOG] state=IDLE"));
       delay(600);
     }
   }
@@ -189,24 +205,37 @@ float readDistance() {
 
 void sendCloseWeight() {
   delay(CLOSE_WEIGHT_SETTLE_MS);
-  if (!scale.is_ready()) return;
+  if (!scale.is_ready()) {
+    Serial.println(F("[LOG] HX711 not ready, skip close weight"));
+    return;
+  }
 
   float w = scale.get_units(10);
   if (w < 0) w = 0;
 
+  Serial.print(F("[LOG] close weight="));
+  Serial.print(w, 1);
+  Serial.println(F("g"));
   Serial.print(F("CLOSE_WEIGHT:"));
   Serial.println(w, 1);
 }
 
 void handlePiCmd(const char* cmd) {
+  Serial.print(F("[RX] ")); Serial.println(cmd);
   if      (strcmp_P(cmd, PSTR("LED_Y:1")) == 0)            digitalWrite(LED_YELLOW, HIGH);
   else if (strcmp_P(cmd, PSTR("LED_Y:0")) == 0)            digitalWrite(LED_YELLOW, LOW);
   else if (strcmp_P(cmd, PSTR("LED_R:1")) == 0)            digitalWrite(LED_RED,    HIGH);
   else if (strcmp_P(cmd, PSTR("LED_R:0")) == 0)            digitalWrite(LED_RED,    LOW);
   else if (strcmp_P(cmd, PSTR("BUZZER")) == 0)             beep(300);
   else if (strcmp_P(cmd, PSTR("SCAN_FAIL")) == 0)          showOled(F("ScanFailed"));
-  else if (strcmp_P(cmd, PSTR("STATE:WEIGHT_READY")) == 0) currentState = WEIGHT_READY;
-  else if (strcmp_P(cmd, PSTR("STATE:IDLE")) == 0)         currentState = IDLE;
+  else if (strcmp_P(cmd, PSTR("STATE:WEIGHT_READY")) == 0) {
+    currentState = WEIGHT_READY;
+    Serial.println(F("[LOG] state=WEIGHT_READY"));
+  }
+  else if (strcmp_P(cmd, PSTR("STATE:IDLE")) == 0) {
+    currentState = IDLE;
+    Serial.println(F("[LOG] state=IDLE"));
+  }
   else if (strncmp_P(cmd, PSTR("OLED:"), 5) == 0)          showOled(cmd + 5);
 }
 

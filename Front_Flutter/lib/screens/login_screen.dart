@@ -50,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 const Spacer(flex: 3),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
                   child: _LoginCard(
                     idController: _idController,
                     pwController: _pwController,
@@ -108,19 +108,17 @@ class _LoginCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.kitchen_rounded,
-                    size: 32, color: const Color(0xFF0288D1)),
-                const SizedBox(width: 10),
-                const Text(
+                Icon(Icons.kitchen_rounded, size: 32, color: Color(0xFF0288D1)),
+                SizedBox(width: 10),
+                Text(
                   '스마트 냉장고',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF01579B),
-                    letterSpacing: -0.5,
                   ),
                 ),
               ],
@@ -132,7 +130,8 @@ class _LoginCard extends StatelessWidget {
                 labelText: '아이디',
                 prefixIcon: const Icon(Icons.person_outline),
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 filled: true,
                 fillColor: Colors.grey.shade50,
               ),
@@ -146,12 +145,12 @@ class _LoginCard extends StatelessWidget {
                 labelText: '비밀번호',
                 prefixIcon: const Icon(Icons.lock_outline),
                 suffixIcon: IconButton(
-                  icon: Icon(
-                      obscure ? Icons.visibility_off : Icons.visibility),
+                  icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
                   onPressed: onToggleObscure,
                 ),
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 filled: true,
                 fillColor: Colors.grey.shade50,
               ),
@@ -167,7 +166,8 @@ class _LoginCard extends StatelessWidget {
                   backgroundColor: const Color(0xFF0288D1),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   elevation: 2,
                 ),
                 child: loading
@@ -175,11 +175,17 @@ class _LoginCard extends StatelessWidget {
                         width: 22,
                         height: 22,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
-                    : const Text('로그인',
+                    : const Text(
+                        '로그인',
                         style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600)),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
               ),
             ),
           ],

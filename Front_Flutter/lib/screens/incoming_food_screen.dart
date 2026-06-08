@@ -1,19 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/food_provider.dart';
 import '../models/food_item.dart';
+import '../providers/food_provider.dart';
+import '../services/api_service.dart';
 
 class IncomingFoodScreen extends StatefulWidget {
   const IncomingFoodScreen({super.key});
+
   @override
   State<IncomingFoodScreen> createState() => _IncomingFoodScreenState();
 }
 
 class _IncomingFoodScreenState extends State<IncomingFoodScreen> {
+  bool _startingScan = false;
+
   @override
   void initState() {
     super.initState();
     Future.microtask(() => context.read<FoodProvider>().refresh());
+  }
+
+  Future<void> _startScan() async {
+    setState(() => _startingScan = true);
+    try {
+      await startScan();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('OCR 스캔을 시작했습니다.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('스캔 시작 실패: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _startingScan = false);
+    }
   }
 
   @override
@@ -22,10 +44,22 @@ class _IncomingFoodScreenState extends State<IncomingFoodScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('입고식품', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text('입고상품', style: TextStyle(fontWeight: FontWeight.w700)),
         centerTitle: false,
         actions: [
           IconButton(
+            tooltip: '스캔 시작',
+            icon: _startingScan
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.document_scanner_outlined),
+            onPressed: _startingScan ? null : _startScan,
+          ),
+          IconButton(
+            tooltip: '새로고침',
             icon: const Icon(Icons.refresh),
             onPressed: () => context.read<FoodProvider>().refresh(),
           ),
@@ -34,7 +68,7 @@ class _IncomingFoodScreenState extends State<IncomingFoodScreen> {
       body: food.loading
           ? const Center(child: CircularProgressIndicator())
           : food.foods.isEmpty
-              ? _EmptyFoodList()
+              ? const _EmptyFoodList()
               : RefreshIndicator(
                   onRefresh: () => context.read<FoodProvider>().refresh(),
                   child: ListView.separated(
@@ -50,6 +84,7 @@ class _IncomingFoodScreenState extends State<IncomingFoodScreen> {
 
 class _FoodCard extends StatelessWidget {
   final FoodItem item;
+
   const _FoodCard({required this.item});
 
   @override
@@ -73,23 +108,29 @@ class _FoodCard extends StatelessWidget {
             CircleAvatar(
               radius: 22,
               backgroundColor: urgentColor.withOpacity(0.12),
-              child: Text('${item.slotNumber}',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700, color: urgentColor)),
+              child: Text(
+                '${item.slotNumber}',
+                style: TextStyle(fontWeight: FontWeight.w700, color: urgentColor),
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.foodTypeName,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text(
+                    item.foodTypeName,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 2),
                   Text(
-                    '${item.expiredDate}  ·  ${item.storage}  ·  ${item.weight.toStringAsFixed(0)}g',
+                    '${item.expiredDate} · ${item.storage} · ${item.weight.toStringAsFixed(0)}g',
                     style: TextStyle(
-                        fontSize: 12,
-                        color: colorScheme.onSurface.withOpacity(0.55)),
+                      fontSize: 12,
+                      color: colorScheme.onSurface.withOpacity(0.55),
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -103,9 +144,10 @@ class _FoodCard extends StatelessWidget {
               child: Text(
                 days < 0 ? '만료' : 'D-$days',
                 style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: urgentColor),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: urgentColor,
+                ),
               ),
             ),
           ],
@@ -116,22 +158,26 @@ class _FoodCard extends StatelessWidget {
 }
 
 class _EmptyFoodList extends StatelessWidget {
+  const _EmptyFoodList();
+
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.inventory_2_outlined,
-              size: 72,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.2)),
+          Icon(
+            Icons.inventory_2_outlined,
+            size: 72,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+          ),
           const SizedBox(height: 16),
-          Text('등록된 식품이 없습니다.',
-              style: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withOpacity(0.4))),
+          Text(
+            '등록된 식품이 없습니다.',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+            ),
+          ),
         ],
       ),
     );

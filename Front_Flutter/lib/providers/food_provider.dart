@@ -34,19 +34,41 @@ class FoodProvider extends ChangeNotifier {
     required String expiredDate,
     required String storage,
     required String foodTypeName,
+    int quantity = 1,
     double weight = 0,
   }) async {
-    await addFoodManual(
-      expiredDate:   expiredDate,
-      storage:       storage,
-      foodTypeName:  foodTypeName,
-      weight:        weight,
-    );
-    await refresh();
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      await addFoodManual(
+        expiredDate:  expiredDate,
+        storage:      storage,
+        foodTypeName: foodTypeName,
+        quantity:     quantity,
+        weight:       weight,
+      );
+      await refresh();
+    } catch (e) {
+      error = e.toString();
+      loading = false;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> outgo(int id, String reason) async {
-    await outgoFood(id, reason);
-    await refresh();
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      await outgoFood(id, reason);
+      await refresh();
+    } catch (e) {
+      error = e.toString();
+      loading = false;
+      notifyListeners();
+      rethrow;
+    }
   }
 }

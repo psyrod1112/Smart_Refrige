@@ -3,11 +3,14 @@ import 'package:provider/provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/food_provider.dart';
 import 'screens/login_screen.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
+  await initializePushNotifications();
+
   runApp(
     MultiProvider(
       providers: [

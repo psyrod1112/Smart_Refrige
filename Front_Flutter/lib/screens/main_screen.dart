@@ -32,7 +32,7 @@ class _MainScreenState extends State<MainScreen> {
     NavigationDestination(
       icon: Icon(Icons.inventory_2_outlined),
       selectedIcon: Icon(Icons.inventory_2),
-      label: '입고식품',
+      label: '입고상품',
     ),
     NavigationDestination(
       icon: Icon(Icons.add_box_outlined),
@@ -60,8 +60,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _currentIndex = index),
+        onDestinationSelected: (index) => setState(() => _currentIndex = index),
         destinations: _destinations,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         height: 68,

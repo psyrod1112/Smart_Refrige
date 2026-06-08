@@ -13,7 +13,11 @@ _lock = threading.Lock()
 
 def init():
     print("[Camera] Initialized (rpicam-still)")
-    threading.Thread(target=start_scan, daemon=True).start()
+
+def clear_expiry():
+    global current_expiry
+    with _lock:
+        current_expiry = None
 
 def start_scan():
     global scan_active, current_expiry

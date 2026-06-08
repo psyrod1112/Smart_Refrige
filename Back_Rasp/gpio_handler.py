@@ -17,7 +17,7 @@ def init(on_button_press):
         callback=_callback,
         bouncetime=500
     )
-    print(f"[GPIO] 버튼 대기 중 (BCM {BUTTON_PIN})")
+    print(f"[GPIO] Button ready (BCM {BUTTON_PIN})")
 
 def cleanup():
     GPIO.cleanup()

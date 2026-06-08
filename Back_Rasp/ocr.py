@@ -25,7 +25,7 @@ def run_ocr(image_path: str) -> str:
             timeout=15
         )
         data = resp.json()
-        print(f"[OCR] 응답 전체: {data}")   # 처음엔 응답 구조 확인용으로 출력
+        print(f"[OCR] Full response: {data}")
 
         outputs = data.get("outputs", [])
         if not outputs:
@@ -33,7 +33,7 @@ def run_ocr(image_path: str) -> str:
         return outputs[0].get("recognized_text", "")
 
     except Exception as e:
-        print(f"[OCR] 오류: {e}")
+        print(f"[OCR] Error: {e}")
         return ""
 
 def parse_expiry(text: str) -> datetime | None:

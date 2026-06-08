@@ -26,24 +26,26 @@ def init(on_door_change, on_switch, on_temp_hum, on_close_weight=None):
     time.sleep(2)
     t = threading.Thread(target=_read_loop, daemon=True)
     t.start()
-    print(f"[Serial] 연결됨: {SERIAL_PORT}")
+    print(f"[Serial] Connected: {SERIAL_PORT}")
 
 def send(cmd: str):
     """Arduino로 명령 전송 (줄바꿈 자동 추가)"""
     with _lock:
         if _ser and _ser.is_open:
             _ser.write((cmd + "\n").encode())
+            print(f"[Serial] TX: {cmd}")
 
 def _read_loop():
     """백그라운드에서 Arduino 메시지 수신"""
     while True:
         try:
-            line = _ser.readline().decode().strip()
+            line = _ser.readline().decode(errors="ignore").strip()
             if not line:
                 continue
+            print(f"[Serial] RX: {line}")
             _parse(line)
         except Exception as e:
-            print(f"[Serial] 수신 오류: {e}")
+            print(f"[Serial] Receive error: {e}")
 
 def _parse(line: str):
     if line.startswith("DOOR:"):
@@ -60,16 +62,16 @@ def _parse(line: str):
             hum    = float(parts[2].split(":")[1])
             if _on_switch:
                 _on_switch(weight, temp, hum)
-        except (ValueError, IndexError):
-            pass
+        except (ValueError, IndexError) as e:
+            print(f"[Serial] Parse error (SWITCH): {e} raw={line!r}")
 
     elif line.startswith("CLOSE_WEIGHT:"):
         try:
             weight = float(line.split(":")[1])
             if _on_close_weight:
                 _on_close_weight(weight)
-        except (ValueError, IndexError):
-            pass
+        except (ValueError, IndexError) as e:
+            print(f"[Serial] Parse error (CLOSE_WEIGHT): {e} raw={line!r}")
 
     elif line.startswith("TEMP:"):
         try:
@@ -79,5 +81,8 @@ def _parse(line: str):
             hum  = float(parts[1].split(":")[1])
             if _on_temp_hum:
                 _on_temp_hum(temp, hum)
-        except (ValueError, IndexError):
-            pass
+        except (ValueError, IndexError) as e:
+            print(f"[Serial] Parse error (TEMP): {e} raw={line!r}")
+
+    elif not line.startswith("["):
+        print(f"[Serial] Unknown message: {line!r}")

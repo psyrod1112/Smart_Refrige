@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/food_provider.dart';
 import '../models/food_item.dart';
+import '../providers/food_provider.dart';
 
 class ManualOutgoingScreen extends StatefulWidget {
   const ManualOutgoingScreen({super.key});
+
   @override
   State<ManualOutgoingScreen> createState() => _ManualOutgoingScreenState();
 }
@@ -68,45 +69,53 @@ class _ManualOutgoingScreenState extends State<ManualOutgoingScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('출고 정보',
-                        style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurface)),
+                    Text(
+                      '출고 정보',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
                     const SizedBox(height: 20),
-                    // 식품 선택
                     DropdownButtonFormField<FoodItem>(
                       value: _selected,
                       decoration: InputDecoration(
                         labelText: '출고할 식품',
                         prefixIcon: const Icon(Icons.fastfood_outlined),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         filled: true,
                       ),
                       hint: const Text('식품 선택'),
-                      items: food.foods.map((f) => DropdownMenuItem(
-                        value: f,
-                        child: Text(
-                          '${f.foodTypeName}  ·  ${f.expiredDate}  ·  슬롯${f.slotNumber}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      )).toList(),
+                      items: food.foods
+                          .map(
+                            (f) => DropdownMenuItem(
+                              value: f,
+                              child: Text(
+                                '${f.foodTypeName} · ${f.expiredDate} · 슬롯 ${f.slotNumber}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
                       onChanged: (v) => setState(() => _selected = v),
                     ),
                     const SizedBox(height: 14),
-                    // 출고 사유
                     DropdownButtonFormField<String>(
                       value: _reason,
                       decoration: InputDecoration(
                         labelText: '출고 사유',
                         prefixIcon: const Icon(Icons.move_up_outlined),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         filled: true,
                       ),
-                      items: _reasons.map((r) =>
-                          DropdownMenuItem(value: r, child: Text(r))).toList(),
+                      items: _reasons
+                          .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                          .toList(),
                       onChanged: (v) => setState(() => _reason = v!),
                     ),
                   ],
@@ -119,13 +128,16 @@ class _ManualOutgoingScreenState extends State<ManualOutgoingScreen> {
               child: ElevatedButton.icon(
                 onPressed: food.loading ? null : _submit,
                 icon: const Icon(Icons.move_up_outlined),
-                label: const Text('출고 처리',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                label: const Text(
+                  '출고 처리',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
             ),
