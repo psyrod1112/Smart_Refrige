@@ -1,0 +1,23 @@
+# Firebase credentials (NEVER commit these)
+*firebase-adminsdk*.json
+Front_Flutter/android/app/google-services.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+*.env
+
+# Flutter / Android
+Front_Flutter/.dart_tool/
+Front_Flutter/build/
+Front_Flutter/.flutter-plugins
+Front_Flutter/.flutter-plugins-dependencies
+Front_Flutter/android/.gradle/
+Front_Flutter/android/local.properties
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
