@@ -12,9 +12,9 @@ import serial
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, request
 
-import camera
-import database
-import fcm
+import NEWCODES.camera as camera
+import NEWCODES.database as database
+import NEWCODES.fcm as fcm
 
 # ★ 포트를 환경에 맞게 수정: /dev/ttyUSB0 또는 /dev/ttyACM0 ★
 SERIAL_PORT = "/dev/ttyUSB0"

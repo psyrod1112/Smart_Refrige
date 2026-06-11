@@ -4,9 +4,9 @@ import time
 
 from flask import Flask, jsonify, request
 
-import camera
+import NEWCODES.camera as camera
 import db
-import fcm
+import NEWCODES.fcm as fcm
 import fifo
 import serial_handler
 
