@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'home_screen.dart';
 import 'incoming_food_screen.dart';
 import 'manual_incoming_screen.dart';
@@ -27,22 +28,22 @@ class _MainScreenState extends State<MainScreen> {
     NavigationDestination(
       icon: Icon(Icons.home_outlined),
       selectedIcon: Icon(Icons.home),
-      label: '홈',
+      label: '현황',
     ),
     NavigationDestination(
       icon: Icon(Icons.inventory_2_outlined),
       selectedIcon: Icon(Icons.inventory_2),
-      label: '입고상품',
+      label: '입고',
     ),
     NavigationDestination(
       icon: Icon(Icons.add_box_outlined),
       selectedIcon: Icon(Icons.add_box),
-      label: '수동입고',
+      label: '직접입고',
     ),
     NavigationDestination(
       icon: Icon(Icons.move_up_outlined),
       selectedIcon: Icon(Icons.move_up),
-      label: '수동출고',
+      label: '출고',
     ),
     NavigationDestination(
       icon: Icon(Icons.settings_outlined),
@@ -54,10 +55,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),

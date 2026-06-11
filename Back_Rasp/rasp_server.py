@@ -110,8 +110,8 @@ def on_switch(weight: float, temp: float, hum: float):
         f"expiry={saved['expired_date']} weight={weight:.1f}g slot={saved['slot']}"
     )
     _send_push(
-        "입고 완료",
-        f"{saved['food_type']}이(가) {saved['slot']}번 슬롯에 저장되었습니다.",
+        "Incoming Complete",
+        f"{saved['food_type']} stored in slot {saved['slot']}.",
     )
 
 
@@ -139,7 +139,7 @@ def on_close_weight(weight: float):
         item = db.mark_next_outgoing("consumed")
         if item is None:
             print(f"[Weight] Outgoing detected ({-delta:.1f}g), but no stored item exists")
-            _send_push("출고 감지", f"무게가 {-delta:.0f}g 줄었지만 보관 목록이 비어 있습니다.")
+            _send_push("Outgoing Detected", f"Weight decreased by {-delta:.0f}g but no stored items found.")
             return
 
         print(
@@ -147,14 +147,14 @@ def on_close_weight(weight: float):
             f"id={item['id']} type={item.get('food_type_name', '')} delta={delta:+.1f}g"
         )
         _send_push(
-            "출고 감지",
-            f"{item.get('food_type_name', '식품')}이(가) 출고 처리되었습니다.",
+            "Outgoing Detected",
+            f"{item.get('food_type_name', 'item')} has been marked as outgoing.",
         )
     else:
         print(f"[Weight] Incoming-like increase detected: +{delta:.1f}g")
         _send_push(
-            "무게 증가 감지",
-            "새 식품이 들어온 것 같습니다. OCR 스캔 후 등록을 완료해주세요.",
+            "Weight Increase Detected",
+            "New item detected. Please scan with OCR to complete registration.",
         )
 
 
@@ -185,7 +185,7 @@ def add_food_manual():
             image_id="NONE",
             quantity=quantity,
         )
-        _send_push("수동 입고 완료", f"{food_type_name}이(가) {slot}번 슬롯에 저장되었습니다.")
+        _send_push("Manual Incoming Complete", f"{food_type_name} stored in slot {slot}.")
         return jsonify({"id": item_id, "slot": slot}), 201
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
@@ -196,7 +196,7 @@ def update_food(item_id):
     data = request.json or {}
     status = data.get("status", "consumed")
     db.update_status(item_id, status)
-    _send_push("출고 완료", f"식품 #{item_id} 상태가 {status}(으)로 변경되었습니다.")
+    _send_push("Outgoing Complete", f"Item #{item_id} status changed to {status}.")
     return jsonify({"ok": True})
 
 
@@ -233,7 +233,7 @@ def _expiry_alert_loop():
             if _last_expiry_alert_date != today:
                 count = db.get_dashboard(_last_temp, _last_hum)["expiring_soon"]
                 if count > 0:
-                    _send_push("유통기한 알림", f"{count}개 식품의 유통기한이 3일 이내입니다.")
+                    _send_push("Expiry Alert", f"{count} item(s) expiring within 3 days.")
                 _last_expiry_alert_date = today
         except Exception as e:
             print(f"[ExpiryAlert] Failed: {e}")

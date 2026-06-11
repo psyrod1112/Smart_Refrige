@@ -501,9 +501,9 @@ int main(void) {
         if (currentState == S_2) {
             if (_millis_counter - lastWeightUpdate > 250) { // 초당 4회 리프레시
                 lastWeightUpdate = _millis_counter;
-                float current_weight = HX711_get_units(&scale, 3);
+                float current_weight = scale.get_units(3);
                 if (current_weight < 0) current_weight = 0;
-                
+
                 float diff = fabs(current_weight - base_weight);
                 if (diff < 0) diff = 0;
 
@@ -546,7 +546,7 @@ int main(void) {
         if (currentState == S_4) {
             if (_millis_counter - lastWeightUpdate > 250) {
                 lastWeightUpdate = _millis_counter;
-                float current_weight = HX711_get_units(&scale, 3);
+                float current_weight = scale.get_units(3);
                 if (current_weight < 0) current_weight = 0;
 
                 // 이미 올려진 누적 무게 대비 10g 이상 증가하면 새 물건으로 판단
@@ -649,7 +649,7 @@ void handlePiCmd(const char* cmd) {
                 if (pos_ptr) {
                     display_position = atoi(pos_ptr + 5);
                 }
-                HX711_tare(&scale, 5);
+                scale.tare();
                 base_weight = 0;
                 measured_weight = 0;
                 currentState = S_2;
@@ -678,7 +678,7 @@ void handlePiCmd(const char* cmd) {
         if (currentState == S_6) {
             display_position = atoi(cmd + 16);
             isFifoStatus = true;
-            HX711_tare(&scale, 5);
+            scale.tare();
             base_weight = 0;
             measured_weight = 0;
             currentState = S_2;

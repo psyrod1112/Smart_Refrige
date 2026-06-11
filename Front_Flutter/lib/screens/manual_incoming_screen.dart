@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/food_provider.dart';
 
 class ManualIncomingScreen extends StatefulWidget {
@@ -12,6 +13,7 @@ class ManualIncomingScreen extends StatefulWidget {
 class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
   final _nameController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
+  final _weightController = TextEditingController(text: '0');
   DateTime? _expiryDate;
   String _selectedCategory = '냉장';
   bool _submitting = false;
@@ -22,6 +24,7 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
   void dispose() {
     _nameController.dispose();
     _quantityController.dispose();
+    _weightController.dispose();
     super.dispose();
   }
 
@@ -38,23 +41,12 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
   Future<void> _submit() async {
     final name = _nameController.text.trim();
     final quantity = int.tryParse(_quantityController.text.trim()) ?? 0;
+    final weight = double.tryParse(_weightController.text.trim()) ?? 0;
 
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('식품명을 입력해주세요.')),
-      );
-      return;
-    }
-    if (quantity <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('수량은 1개 이상이어야 합니다.')),
-      );
-      return;
-    }
-    if (_expiryDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('유통기한을 선택해주세요.')),
-      );
+    if (name.isEmpty || quantity <= 0 || _expiryDate == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('식품명, 수량, 유통기한을 확인해주세요.')));
       return;
     }
 
@@ -64,17 +56,19 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
     setState(() => _submitting = true);
     try {
       await context.read<FoodProvider>().addManual(
-            expiredDate: expiredDate,
-            storage: _selectedCategory,
-            foodTypeName: name,
-            quantity: quantity,
-          );
+        expiredDate: expiredDate,
+        storage: _selectedCategory,
+        foodTypeName: name,
+        quantity: quantity,
+        weight: weight,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$name 입고 완료'), backgroundColor: Colors.green),
       );
       _nameController.clear();
       _quantityController.text = '1';
+      _weightController.text = '0';
       setState(() => _expiryDate = null);
     } catch (e) {
       if (!mounted) return;
@@ -92,123 +86,92 @@ class _ManualIncomingScreenState extends State<ManualIncomingScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('수동입고', style: TextStyle(fontWeight: FontWeight.w700)),
-        centerTitle: false,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              color: colorScheme.surfaceContainerLow,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '식품 정보 입력',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: '식품명',
-                        prefixIcon: const Icon(Icons.fastfood_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _quantityController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: '수량',
-                        prefixIcon: const Icon(Icons.numbers),
-                        suffixText: '개',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    DropdownButtonFormField<String>(
-                      value: _selectedCategory,
-                      decoration: InputDecoration(
-                        labelText: '보관 구역',
-                        prefixIcon: const Icon(Icons.category_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                      ),
-                      items: _categories
-                          .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                          .toList(),
-                      onChanged: (v) => setState(() => _selectedCategory = v!),
-                    ),
-                    const SizedBox(height: 14),
-                    InkWell(
-                      onTap: _pickDate,
-                      borderRadius: BorderRadius.circular(12),
-                      child: InputDecorator(
-                        decoration: InputDecoration(
-                          labelText: '유통기한',
-                          prefixIcon: const Icon(Icons.calendar_today_outlined),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                        ),
-                        child: Text(
-                          _expiryDate == null
-                              ? '날짜 선택'
-                              : '${_expiryDate!.year}.${_expiryDate!.month.toString().padLeft(2, '0')}.${_expiryDate!.day.toString().padLeft(2, '0')}',
-                          style: TextStyle(
-                            color: _expiryDate == null
-                                ? colorScheme.onSurface.withOpacity(0.4)
-                                : colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 52,
-              child: ElevatedButton.icon(
-                onPressed: _submitting ? null : _submit,
-                icon: const Icon(Icons.add_box_outlined),
-                label: const Text(
-                  '입고 등록',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-          ],
+        title: const Text(
+          '직접 입고',
+          style: TextStyle(fontWeight: FontWeight.w700),
         ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            color: colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(
+                      labelText: '식품명',
+                      prefixIcon: Icon(Icons.fastfood_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _quantityController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '수량',
+                      suffixText: '개',
+                      prefixIcon: Icon(Icons.numbers),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _weightController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '무게',
+                      suffixText: 'g',
+                      prefixIcon: Icon(Icons.scale_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedCategory,
+                    decoration: const InputDecoration(
+                      labelText: '보관 구역',
+                      prefixIcon: Icon(Icons.category_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _categories
+                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                        .toList(),
+                    onChanged: (v) => setState(() => _selectedCategory = v!),
+                  ),
+                  const SizedBox(height: 14),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.calendar_today_outlined),
+                    title: Text(
+                      _expiryDate == null
+                          ? '유통기한 선택'
+                          : '${_expiryDate!.year}.${_expiryDate!.month.toString().padLeft(2, '0')}.${_expiryDate!.day.toString().padLeft(2, '0')}',
+                    ),
+                    onTap: _pickDate,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 52,
+            child: FilledButton.icon(
+              onPressed: _submitting ? null : _submit,
+              icon: const Icon(Icons.add_box_outlined),
+              label: const Text('입고 등록'),
+            ),
+          ),
+        ],
       ),
     );
   }

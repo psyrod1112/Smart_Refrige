@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -21,20 +22,20 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _login() async {
+  Future<void> _login() async {
     if (_idController.text.isEmpty || _pwController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('아이디와 비밀번호를 입력해주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('아이디와 비밀번호를 입력해주세요.')));
       return;
     }
     setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 600));
+    await Future.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
     setState(() => _loading = false);
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const MainScreen()),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const MainScreen()));
   }
 
   @override
@@ -44,24 +45,20 @@ class _LoginScreenState extends State<LoginScreen> {
         fit: StackFit.expand,
         children: [
           Image.asset('assets/background.png', fit: BoxFit.cover),
-          Container(color: Colors.black.withOpacity(0.45)),
+          Container(color: Colors.black.withValues(alpha: 0.45)),
           SafeArea(
-            child: Column(
-              children: [
-                const Spacer(flex: 3),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: _LoginCard(
-                    idController: _idController,
-                    pwController: _pwController,
-                    obscure: _obscure,
-                    loading: _loading,
-                    onToggleObscure: () => setState(() => _obscure = !_obscure),
-                    onLogin: _login,
-                  ),
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: _LoginCard(
+                  idController: _idController,
+                  pwController: _pwController,
+                  obscure: _obscure,
+                  loading: _loading,
+                  onToggleObscure: () => setState(() => _obscure = !_obscure),
+                  onLogin: _login,
                 ),
-                const Spacer(flex: 2),
-              ],
+              ),
             ),
           ),
         ],
@@ -90,15 +87,15 @@ class _LoginCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.92),
-          borderRadius: BorderRadius.circular(24),
+          color: Colors.white.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.18),
+              color: Colors.black.withValues(alpha: 0.18),
               blurRadius: 32,
               offset: const Offset(0, 8),
             ),
@@ -126,14 +123,11 @@ class _LoginCard extends StatelessWidget {
             const SizedBox(height: 28),
             TextField(
               controller: idController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: '아이디',
-                prefixIcon: const Icon(Icons.person_outline),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                prefixIcon: Icon(Icons.person_outline),
+                border: OutlineInputBorder(),
                 filled: true,
-                fillColor: Colors.grey.shade50,
               ),
               textInputAction: TextInputAction.next,
             ),
@@ -148,11 +142,8 @@ class _LoginCard extends StatelessWidget {
                   icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
                   onPressed: onToggleObscure,
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                border: const OutlineInputBorder(),
                 filled: true,
-                fillColor: Colors.grey.shade50,
               ),
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => onLogin(),
@@ -160,16 +151,8 @@ class _LoginCard extends StatelessWidget {
             const SizedBox(height: 24),
             SizedBox(
               height: 50,
-              child: ElevatedButton(
+              child: FilledButton(
                 onPressed: loading ? null : onLogin,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0288D1),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 2,
-                ),
                 child: loading
                     ? const SizedBox(
                         width: 22,
@@ -179,13 +162,7 @@ class _LoginCard extends StatelessWidget {
                           color: Colors.white,
                         ),
                       )
-                    : const Text(
-                        '로그인',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                    : const Text('로그인'),
               ),
             ),
           ],

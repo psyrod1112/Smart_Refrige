@@ -25,7 +25,6 @@ def init_db():
                 food_type_name  TEXT,
                 expired_date    DATE    NOT NULL,
                 quantity        INTEGER DEFAULT 1,
-                weight          REAL,
                 storage         TEXT    DEFAULT '냉장',
                 image_id        TEXT    DEFAULT 'NONE',
                 slot_number     INTEGER,
