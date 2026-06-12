@@ -7,6 +7,7 @@
 import threading
 import time
 import uuid
+from datetime import datetime
 
 import serial
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -33,6 +34,51 @@ except serial.SerialException as e:
 _pending: dict = {}  # 스캔 결과 임시 보관 (유통기한 등 세션 변수)
 latest_temp = 0.0
 latest_hum = 0.0
+
+# ── 인메모리 상태 ─────────────────────────────────────────
+_fcm_tokens: set[str] = set()
+
+_slot: dict = {
+    "slot_id": 1,
+    "status": "FIFO",
+    "confirm_delta": 0.0,
+    "confirm_type": "OUTBOUND",
+    "base_weight_gram": None,
+    "updated_at": None,
+}
+
+_notified_today: dict[str, str] = {}  # notif_type -> date_iso
+
+
+def _get_slot() -> dict:
+    return dict(_slot)
+
+
+def _mark_slot_confirm(delta: float = 0, confirm_type: str = "OUTBOUND") -> dict:
+    _slot.update({
+        "status": "CONFIRM",
+        "confirm_delta": delta,
+        "confirm_type": confirm_type,
+        "updated_at": datetime.now().isoformat(),
+    })
+    return _get_slot()
+
+
+def _resolve_slot() -> dict:
+    _slot.update({
+        "status": "FIFO",
+        "confirm_delta": 0.0,
+        "updated_at": datetime.now().isoformat(),
+    })
+    return _get_slot()
+
+
+def _already_notified_today(notif_type: str) -> bool:
+    return _notified_today.get(notif_type) == datetime.now().date().isoformat()
+
+
+def _log_notification(notif_type: str):
+    _notified_today[notif_type] = datetime.now().date().isoformat()
 
 
 def _send_arduino(cmd: str):
@@ -108,7 +154,7 @@ def run_inbound_scan_loop():
     # 스캔 종료 처리
     if date_found:
         _pending["expiry_date"] = date_found
-        slot = database.get_slot_status()
+        slot = _get_slot()
         if slot["status"] == "FIFO":
             # 슬롯 정상 상태 — DB 기준 진열 위치 계산 후 바로 진행
             position = database.calculate_display_position(date_found)
@@ -117,10 +163,10 @@ def run_inbound_scan_loop():
         else:
             # 슬롯 CONFIRM 상태 (이전 출고 순서 위반 미처리) — 먼저 DB 수정 필요
             n = int(slot.get("confirm_delta", 0))
-            tokens = database.get_all_tokens()
+            tokens = list(_fcm_tokens)
             fcm.send_push(
-                "DB update required",
-                f"There are unprocessed outbound items. ({n}) Please check the app before storing.",
+                "입고 전 앱 확인 필요",
+                f"FIFO 순서가 맞지 않아 {n}개 항목 정리가 필요합니다. 앱에서 목록을 확인하고 수정한 뒤 입고를 진행해주세요.",
                 tokens,
             )
             _send_arduino(f"PROGRESS:1,FIFO:0,N:{n}")
@@ -146,10 +192,10 @@ def handle_inbound(weight: float):
         quantity=int(_pending.get("quantity", 1) or 1),
     )
     _pending["last_inbound_food_id"] = food_id
-    tokens = database.get_all_tokens()
+    tokens = list(_fcm_tokens)
     fcm.send_push(
-        "New food registered",
-        "Please open the app and enter the food name and expiry date.",
+        "새 식품이 등록되었습니다",
+        "앱을 열어 식품 이름과 유통기한을 입력해주세요.",
         tokens,
     )
     print(f"[Inbound] SUCCESS: weight={weight}g")
@@ -213,8 +259,8 @@ def process_line(line: str):
             total_weight = sum(f.get("weight_gram", 0) or 0 for f in foods)
             total_qty = sum(f.get("quantity", 1) or 1 for f in foods)
             if total_qty > 0:
-                database.set_slot_base_weight(1, total_weight / total_qty)
-        database.resolve_slot_confirm()
+                _slot["base_weight_gram"] = total_weight / total_qty
+        _resolve_slot()
         _pending.clear()
         _send_arduino("INBOUND_COMPLETE")
         print("[Inbound] Session ended — average weight updated")
@@ -256,12 +302,12 @@ def process_line(line: str):
             
             if delta_w < 5.0:
                 # 무게 변화 없음 -> 그대로 복귀
-                database.resolve_slot_confirm()
+                _resolve_slot()
                 _send_arduino("OUTBOUND_FIFO_OK")
                 print("[Outbound] Weight change negligible — treating as cancelled.")
             else:
                 # 꺼내간 개수 계산 (슬롯 고유 무게 우선, 없으면 DB 평균 사용)
-                unit_weight = database.get_slot_base_weight()
+                unit_weight = _slot["base_weight_gram"]
                 if unit_weight is None:
                     foods = database.get_all_foods()
                     if foods:
@@ -279,17 +325,17 @@ def process_line(line: str):
                 if delta_d > 5.0:
                     # FIFO 만족 -> 가장 오래된(유통기한 짧은) 물건 삭제
                     deleted_ids = database.delete_oldest_foods(removed_qty)
-                    database.resolve_slot_confirm()
+                    _resolve_slot()
                     _send_arduino("OUTBOUND_FIFO_OK")
                     update_yellow_led()
                     print(f"[Outbound] FIFO 성공 - {removed_qty}개 출고 완료 (ID: {deleted_ids})")
                 else:
                     # CONFIRM 상태 진입 (FIFO 순서 위반 — 앞이 아닌 뒤쪽 물건 꺼냄)
-                    database.mark_slot_confirm(removed_qty, "OUTBOUND")
-                    tokens = database.get_all_tokens()
+                    _mark_slot_confirm(removed_qty, "OUTBOUND")
+                    tokens = list(_fcm_tokens)
                     fcm.send_push(
-                        "Outbound order check required",
-                        f"Out-of-order FIFO removal detected. ({removed_qty} items) Please check the app.",
+                        "출고 순서 확인 필요",
+                        f"FIFO 순서를 지키지 않고 {removed_qty}개가 꺼내졌습니다. 앱에서 목록을 확인하고 수정해주세요.",
                         tokens,
                     )
                     _send_arduino(f"OUTBOUND_CONFIRM_ERR:{removed_qty}")
@@ -318,12 +364,19 @@ def process_line(line: str):
 # ── APScheduler: 유통기한 알림 ──────────────────────────
 def expiry_alert_job():
     update_yellow_led()
-    if database.already_notified_today("EXPIRY_ALERT"):
+    if _already_notified_today("EXPIRY_ALERT"):
         return
     items = database.get_expiring_foods(days=3)
     if items:
-        database.log_notification("EXPIRY_ALERT")
-        print(f"[Scheduler] {len(items)} items expiring soon")
+        tokens = list(_fcm_tokens)
+        names = ", ".join(i["name"] for i in items[:3])
+        fcm.send_push(
+            "유통기한 임박 알림",
+            f"{len(items)}개 식품의 유통기한이 3일 이내입니다: {names}",
+            tokens,
+        )
+        _log_notification("EXPIRY_ALERT")
+        print(f"[Scheduler] {len(items)} items expiring soon — push sent")
 
 
 # ── Flask API ──────────────────────────────────────────
@@ -387,7 +440,7 @@ def api_inbound_app_done():
 def api_app_connect():
     """앱에서 유통기한 확인 알림 클릭 시 호출되어 아두이노 화면을 갱신하는 엔드포인트"""
     _send_arduino("APP_CONNECTED")
-    return jsonify({"success": True, "slot": database.get_slot_status()})
+    return jsonify({"success": True, "slot": _get_slot()})
 
 
 @app.route("/fcm/token", methods=["POST"])
@@ -396,20 +449,22 @@ def api_register_fcm_token():
     token = data.get("token")
     if not token:
         return jsonify({"error": "token required"}), 400
-    database.upsert_token(token)
+    _fcm_tokens.add(token)
     return jsonify({"success": True})
 
 
 @app.route("/environment", methods=["GET"])
 def api_environment():
-    """온습도 상태 조회 API"""
+    """아두이노에 DHT 즉시 읽기 요청 후 최신값 반환"""
+    _send_arduino("DHT_REQ")
+    time.sleep(0.5)  # 아두이노가 읽고 응답할 시간 대기
     return jsonify({"temperature": latest_temp, "humidity": latest_hum})
 
 
 @app.route("/foods", methods=["GET"])
 def api_foods():
     return jsonify({
-        "slot": database.get_slot_status(),
+        "slot": _get_slot(),
         "foods": database.get_all_foods(),
     })
 
@@ -449,13 +504,12 @@ def api_update_food(food_id):
 def api_confirm_outbound():
     data = request.json
     food_id = data.get("food_id")
-    delta = float(data.get("delta", 0))
     new_qty = None
     if food_id is not None:
-        new_qty = database.confirm_outbound(int(food_id), delta)
+        new_qty = database.confirm_outbound(int(food_id))
         if new_qty is None:
             return jsonify({"error": "not found"}), 404
-    slot = database.resolve_slot_confirm()
+    slot = _resolve_slot()
     _send_arduino("OUTBOUND_FIFO_OK")
     _send_arduino("LED_R:0")
     update_yellow_led()
@@ -468,16 +522,16 @@ def api_set_base_weight():
     weight = request.json.get("base_weight_gram") if request.json else None
     if weight is None:
         return jsonify({"error": "base_weight_gram required"}), 400
-    database.set_slot_base_weight(1, float(weight))
+    _slot["base_weight_gram"] = float(weight)
     return jsonify({"success": True, "base_weight_gram": float(weight)})
 
 
 @app.route("/slot/resolve", methods=["POST"])
 def api_resolve_slot():
     """앱에서 진열 수정 완료 후 CONFIRM 상태 해소 및 빨간 LED 끄기"""
-    database.resolve_slot_confirm()
+    _resolve_slot()
     _send_arduino("LED_R:0")
-    return jsonify({"success": True, "slot": database.get_slot_status()})
+    return jsonify({"success": True, "slot": _get_slot()})
 
 
 @app.route("/expiring", methods=["GET"])
@@ -496,7 +550,7 @@ def api_dashboard():
         "expiring_soon": len(expiring),
         "temp": latest_temp,
         "hum": latest_hum,
-        "slot": database.get_slot_status(),
+        "slot": _get_slot(),
     })
 
 

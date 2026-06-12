@@ -57,6 +57,14 @@ Future<List<FoodItem>> fetchFoods() async {
   return (await fetchFoodsPayload()).foods;
 }
 
+Future<Map<String, dynamic>> fetchEnvironment() async {
+  final res = await http.get(_uri('/environment'));
+  if (res.statusCode != 200) {
+    throw Exception('환경 데이터 조회 실패 (${res.statusCode})');
+  }
+  return _decodeMap(res);
+}
+
 Future<Map<String, dynamic>> fetchDashboard() async {
   final res = await http.get(_uri('/dashboard'));
   if (res.statusCode != 200) {

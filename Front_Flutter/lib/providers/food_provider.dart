@@ -13,7 +13,7 @@ class FoodProvider extends ChangeNotifier {
   bool loading = false;
   String? error;
 
-  List<FoodItem> get pendingDetails =>
+List<FoodItem> get pendingDetails =>
       foods.where((item) => item.needsDetails).toList();
   bool get needsAppConfirm => slot.needsAppConfirm || pendingDetails.isNotEmpty;
 
@@ -22,19 +22,27 @@ class FoodProvider extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final payload = await fetchFoodsPayload();
+      // /environment는 아두이노 DHT 읽기(0.5s)가 포함되므로 나머지와 병렬 실행
+      final results = await Future.wait([
+        fetchEnvironment(),
+        fetchFoodsPayload(),
+        fetchDashboard(),
+      ]);
+
+      final env = results[0] as Map<String, dynamic>;
+      final payload = results[1] as FoodsPayload;
+      final dash = results[2] as Map<String, dynamic>;
+
       foods = payload.foods;
       slot = payload.slot;
-
-      final dash = await fetchDashboard();
       total =
           (dash['total'] as num?)?.toInt() ??
           foods.fold<int>(0, (sum, item) => sum + item.quantity);
       expiringSoon =
           (dash['expiring_soon'] as num?)?.toInt() ??
           foods.where((item) => item.daysLeft <= 3).length;
-      temp = (dash['temp'] as num?)?.toDouble();
-      hum = (dash['hum'] as num?)?.toDouble();
+      temp = (env['temperature'] as num?)?.toDouble();
+      hum = (env['humidity'] as num?)?.toDouble();
       final slotJson = dash['slot'];
       if (slotJson is Map<String, dynamic>) {
         slot = SlotStatus.fromJson(slotJson);
@@ -137,6 +145,21 @@ class FoodProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await outgoFood(id);
+      await refresh();
+    } catch (e) {
+      error = e.toString();
+      loading = false;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> deleteFood(int id) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      await updateFood(id, quantity: 0);
       await refresh();
     } catch (e) {
       error = e.toString();

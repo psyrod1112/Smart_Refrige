@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import 'home_screen.dart';
-import 'incoming_food_screen.dart';
-import 'manual_incoming_screen.dart';
-import 'manual_outgoing_screen.dart';
 import 'settings_screen.dart';
+
+// notification_service에서 탭 이동 요청 시 사용
+final pendingNavTab = ValueNotifier<int>(-1);
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -16,11 +16,27 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    pendingNavTab.addListener(_handlePendingNav);
+  }
+
+  @override
+  void dispose() {
+    pendingNavTab.removeListener(_handlePendingNav);
+    super.dispose();
+  }
+
+  void _handlePendingNav() {
+    if (pendingNavTab.value >= 0) {
+      setState(() => _currentIndex = pendingNavTab.value);
+      pendingNavTab.value = -1;
+    }
+  }
+
   final List<Widget> _screens = const [
     HomeScreen(),
-    IncomingFoodScreen(),
-    ManualIncomingScreen(),
-    ManualOutgoingScreen(),
     SettingsScreen(),
   ];
 
@@ -29,21 +45,6 @@ class _MainScreenState extends State<MainScreen> {
       icon: Icon(Icons.home_outlined),
       selectedIcon: Icon(Icons.home),
       label: '현황',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.inventory_2_outlined),
-      selectedIcon: Icon(Icons.inventory_2),
-      label: '입고',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.add_box_outlined),
-      selectedIcon: Icon(Icons.add_box),
-      label: '직접입고',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.move_up_outlined),
-      selectedIcon: Icon(Icons.move_up),
-      label: '출고',
     ),
     NavigationDestination(
       icon: Icon(Icons.settings_outlined),

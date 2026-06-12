@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'api_service.dart';
+import '../screens/main_screen.dart';
 
 const String notificationTopic = 'all_users';
 
@@ -37,6 +38,7 @@ Future<void> initializePushNotifications() async {
     FirebaseMessaging.onMessageOpenedApp.listen((_) async {
       try {
         await notifyAppConnected();
+        pendingNavTab.value = 0; // 현황 탭으로 이동
       } catch (e) {
         // ignore: avoid_print
         print('[FCM] App connect callback failed: $e');
@@ -46,6 +48,7 @@ Future<void> initializePushNotifications() async {
     final initialMessage = await messaging.getInitialMessage();
     if (initialMessage != null) {
       await notifyAppConnected();
+      pendingNavTab.value = 1;
     }
   } catch (e) {
     // Firebase config files are device-specific and may be absent in local builds.

@@ -35,7 +35,16 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: '새로고침',
             icon: const Icon(Icons.refresh),
-            onPressed: () => context.read<FoodProvider>().refresh(),
+            onPressed: () async {
+              await context.read<FoodProvider>().refresh();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('새로고침 완료'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -129,10 +138,11 @@ class _StatusPanel extends StatelessWidget {
         : needsConfirm
         ? 'FIFO 확인 필요'
         : '정상 FIFO 상태';
+    final n = provider.slot.confirmDelta.toInt();
     final body = hasPendingDetails
         ? '${provider.pendingDetails.length}개 식품의 이름과 유통기한을 확인해주세요.'
         : needsConfirm
-        ? '앱에서 삭제 또는 수정 내용을 확인한 뒤 슬롯 상태를 해제하세요.'
+        ? 'CONFIRM: ${n}개 삭제 필요. 앱에서 확인 후 슬롯 상태를 해제하세요.'
         : '센서 감지와 DB 상태가 동기화되어 있습니다.';
     final color = hasPendingDetails || needsConfirm
         ? Colors.red

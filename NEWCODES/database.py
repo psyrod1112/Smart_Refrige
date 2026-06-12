@@ -29,59 +29,7 @@ def init_db():
                 registered_at TEXT,
                 deleted_at    TEXT
             );
-            CREATE TABLE IF NOT EXISTS weight_logs (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_type   TEXT,
-                delta        REAL,
-                food_item_id INTEGER,
-                created_at   TEXT
-            );
-            CREATE TABLE IF NOT EXISTS notification_logs (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                sent_at    TEXT,
-                notif_type TEXT
-            );
-            CREATE TABLE IF NOT EXISTS fcm_tokens (
-                id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                token TEXT UNIQUE
-            );
-            CREATE TABLE IF NOT EXISTS slot_status (
-                slot_id          INTEGER PRIMARY KEY,
-                status           TEXT NOT NULL DEFAULT 'FIFO',
-                confirm_delta    REAL DEFAULT 0,
-                confirm_type     TEXT DEFAULT 'OUTBOUND',
-                base_weight_gram REAL DEFAULT NULL,
-                updated_at       TEXT
-            );
         """)
-        # 기존 DB에 새 컬럼 추가 (이미 존재하면 무시)
-        for stmt in [
-            "ALTER TABLE slot_status ADD COLUMN confirm_type TEXT DEFAULT 'OUTBOUND'",
-            "ALTER TABLE slot_status ADD COLUMN base_weight_gram REAL DEFAULT NULL",
-        ]:
-            try:
-                conn.execute(stmt)
-            except Exception:
-                pass
-        conn.execute(
-            """INSERT OR IGNORE INTO slot_status
-               (slot_id, status, confirm_delta, confirm_type, updated_at)
-               VALUES (1, 'FIFO', 0, 'OUTBOUND', ?)""",
-            (datetime.now().isoformat(),),
-        )
-        conn.commit()
-
-
-# ── FCM 토큰 ────────────────────────────────────────────
-def get_all_tokens() -> list[str]:
-    with get_db() as conn:
-        rows = conn.execute("SELECT token FROM fcm_tokens").fetchall()
-    return [r["token"] for r in rows]
-
-
-def upsert_token(token: str):
-    with get_db() as conn:
-        conn.execute("INSERT OR IGNORE INTO fcm_tokens (token) VALUES (?)", (token,))
         conn.commit()
 
 
@@ -143,70 +91,6 @@ def update_food(food_id: int, fields: dict) -> bool:
     return True
 
 
-def get_slot_status() -> dict:
-    with get_db() as conn:
-        row = conn.execute(
-            """SELECT slot_id, status, confirm_delta, confirm_type, base_weight_gram, updated_at
-               FROM slot_status
-               WHERE slot_id=1"""
-        ).fetchone()
-    if row:
-        return dict(row)
-    return {
-        "slot_id": 1, "status": "FIFO", "confirm_delta": 0,
-        "confirm_type": "OUTBOUND", "base_weight_gram": None, "updated_at": None,
-    }
-
-
-def mark_slot_confirm(delta: float = 0, confirm_type: str = "OUTBOUND") -> dict:
-    now_str = datetime.now().isoformat()
-    with get_db() as conn:
-        conn.execute(
-            """INSERT INTO slot_status (slot_id, status, confirm_delta, confirm_type, updated_at)
-               VALUES (1, 'CONFIRM', ?, ?, ?)
-               ON CONFLICT(slot_id) DO UPDATE SET
-                   status='CONFIRM',
-                   confirm_delta=excluded.confirm_delta,
-                   confirm_type=excluded.confirm_type,
-                   updated_at=excluded.updated_at""",
-            (delta, confirm_type, now_str),
-        )
-        conn.commit()
-    return get_slot_status()
-
-
-def get_slot_base_weight(slot_id: int = 1) -> float | None:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT base_weight_gram FROM slot_status WHERE slot_id=?", (slot_id,)
-        ).fetchone()
-    if row and row["base_weight_gram"]:
-        return float(row["base_weight_gram"])
-    return None
-
-
-def set_slot_base_weight(slot_id: int, weight: float):
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE slot_status SET base_weight_gram=? WHERE slot_id=?",
-            (weight, slot_id),
-        )
-        conn.commit()
-
-
-def resolve_slot_confirm() -> dict:
-    now_str = datetime.now().isoformat()
-    with get_db() as conn:
-        conn.execute(
-            """UPDATE slot_status
-               SET status='FIFO', confirm_delta=0, updated_at=?
-               WHERE slot_id=1""",
-            (now_str,),
-        )
-        conn.commit()
-    return get_slot_status()
-
-
 def calculate_display_position(new_expiry: str) -> int:
     foods = get_all_foods()
     valid_dates = [f["expiry_date"] for f in foods if f.get("expiry_date")]
@@ -236,7 +120,7 @@ def delete_oldest_foods(quantity: int) -> list[int]:
 
 
 # ── 출고 ────────────────────────────────────────────────
-def confirm_outbound(food_id: int, delta: float) -> int | None:
+def confirm_outbound(food_id: int) -> int | None:
     with get_db() as conn:
         row = conn.execute(
             "SELECT quantity FROM food_items WHERE id=?", (food_id,)
@@ -253,13 +137,7 @@ def confirm_outbound(food_id: int, delta: float) -> int | None:
             conn.execute(
                 "UPDATE food_items SET quantity=? WHERE id=?", (new_qty, food_id)
             )
-        conn.execute(
-            """INSERT INTO weight_logs (event_type, delta, food_item_id, created_at)
-               VALUES (?,?,?,?)""",
-            ("OUT", delta, food_id, datetime.now().isoformat()),
-        )
         conn.commit()
-    resolve_slot_confirm()
     return max(0, new_qty)
 
 
@@ -277,21 +155,3 @@ def get_expiring_foods(days: int = 3) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def already_notified_today(notif_type: str) -> bool:
-    today = datetime.now().date().isoformat()
-    with get_db() as conn:
-        row = conn.execute(
-            """SELECT id FROM notification_logs
-               WHERE DATE(sent_at)=? AND notif_type=? LIMIT 1""",
-            (today, notif_type),
-        ).fetchone()
-    return row is not None
-
-
-def log_notification(notif_type: str):
-    with get_db() as conn:
-        conn.execute(
-            "INSERT INTO notification_logs (sent_at, notif_type) VALUES (?,?)",
-            (datetime.now().isoformat(), notif_type),
-        )
-        conn.commit()

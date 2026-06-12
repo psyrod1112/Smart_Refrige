@@ -28,19 +28,19 @@ def _get_access_token() -> str | None:
         _cached_token = creds.token
         return _cached_token
     except FileNotFoundError:
-        print(f"[FCM] 서비스 계정 파일 없음: {SERVICE_ACCOUNT_FILE}")
+        print(f"[FCM] Service account file not found: {SERVICE_ACCOUNT_FILE}")
     except Exception as e:
-        print(f"[FCM] 액세스 토큰 발급 실패: {e}")
+        print(f"[FCM] Failed to get access token: {e}")
     return None
 
 
 def send_push(title: str, body: str, tokens: list[str]) -> int:
     """FCM 푸시 알림을 tokens 목록에 전송. 성공한 건수를 반환."""
     if not FCM_PROJECT_ID:
-        print("[FCM] FCM_PROJECT_ID 환경 변수 미설정 — 알림 건너뜀")
+        print("[FCM] FCM_PROJECT_ID not set — skipping notification")
         return 0
     if not tokens:
-        print("[FCM] 등록된 디바이스 토큰 없음 — 알림 건너뜀")
+        print("[FCM] No registered device tokens — skipping notification")
         return 0
 
     access_token = _get_access_token()
@@ -66,9 +66,9 @@ def send_push(title: str, body: str, tokens: list[str]) -> int:
             if resp.status_code == 200:
                 success += 1
             else:
-                print(f"[FCM] 전송 실패 ({resp.status_code}): {resp.text[:120]}")
+                print(f"[FCM] Send failed ({resp.status_code}): {resp.text[:120]}")
         except requests.RequestException as e:
-            print(f"[FCM] 요청 오류: {e}")
+            print(f"[FCM] Request error: {e}")
 
-    print(f"[FCM] {success}/{len(tokens)}개 전송 성공")
+    print(f"[FCM] {success}/{len(tokens)} sent successfully")
     return success
