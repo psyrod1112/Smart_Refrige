@@ -12,12 +12,12 @@ import serial
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, request
 
-import NEWCODES.camera as camera
-import NEWCODES.database as database
-import NEWCODES.fcm as fcm
+import camera as camera
+import database as database
+import fcm as fcm
 
 # ★ 포트를 환경에 맞게 수정: /dev/ttyUSB0 또는 /dev/ttyACM0 ★
-SERIAL_PORT = "/dev/ttyUSB0"
+SERIAL_PORT = "/dev/ttyACM0"
 SERIAL_BAUD = 9600
 SCAN_TIMEOUT_SEC = 300
 
@@ -25,9 +25,9 @@ app = Flask(__name__)
 
 try:
     ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
-    print(f"[Serial] {SERIAL_PORT} 연결됨")
+    print(f"[Serial] {SERIAL_PORT} connected")
 except serial.SerialException as e:
-    print(f"[Serial] 연결 실패: {e}")
+    print(f"[Serial] Connection failed: {e}")
     ser = None
 
 _pending: dict = {}  # 스캔 결과 임시 보관 (유통기한 등 세션 변수)
@@ -62,23 +62,19 @@ def run_inbound_scan_loop():
 
     print("[Scan] Real-time camera scan thread started.")
 
-    import cv2
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("[Camera] Error: Cannot open camera.")
+    try:
+        from picamera2 import Picamera2
+        picam2 = Picamera2()
+        picam2.configure(picam2.create_video_configuration(
+            main={"size": (640, 480), "format": "BGR888"}
+        ))
+        picam2.start()
+        time.sleep(0.5)
+    except Exception as e:
+        print(f"[Camera] Error: Cannot open camera: {e}")
         _send_arduino("PROGRESS:0")
         _pending["scan_active"] = False
         return
-
-    # 성능을 위해 해상도 축소
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
-    # 카메라 오토 포커스/노출 안정화를 위해 5프레임 버림
-    for _ in range(5):
-        if not _pending.get("scan_active"):
-            break
-        cap.read()
 
     date_found = None
     scan_started_at = time.time()
@@ -94,10 +90,7 @@ def run_inbound_scan_loop():
             break
 
         # 2. 카메라 프레임 읽기
-        ret, frame = cap.read()
-        if not ret:
-            time.sleep(0.1)
-            continue
+        frame = picam2.capture_array()
 
         # 3. EasyOCR 인식 시도
         expiry = camera.scan_from_frame(frame)
@@ -106,9 +99,10 @@ def run_inbound_scan_loop():
             print(f"[Scan] SUCCESS: camera input detected {date_found}")
             break
 
-        time.sleep(0.1)
+        time.sleep(0.5)
 
-    cap.release()
+    picam2.stop()
+    picam2.close()
     _pending["scan_active"] = False
 
     # 스캔 종료 처리
@@ -119,18 +113,18 @@ def run_inbound_scan_loop():
             # 슬롯 정상 상태 — DB 기준 진열 위치 계산 후 바로 진행
             position = database.calculate_display_position(date_found)
             _send_arduino(f"PROGRESS:1,FIFO:1,POS:{position}")
-            print(f"[Scan] 슬롯 FIFO, 진열 위치={position}")
+            print(f"[Scan] Slot FIFO, display position={position}")
         else:
             # 슬롯 CONFIRM 상태 (이전 출고 순서 위반 미처리) — 먼저 DB 수정 필요
             n = int(slot.get("confirm_delta", 0))
             tokens = database.get_all_tokens()
             fcm.send_push(
-                "DB 수정 필요",
-                f"미처리 출고 항목이 있습니다. ({n}개) 앱에서 확인 후 입고해주세요.",
+                "DB update required",
+                f"There are unprocessed outbound items. ({n}) Please check the app before storing.",
                 tokens,
             )
             _send_arduino(f"PROGRESS:1,FIFO:0,N:{n}")
-            print(f"[Scan] 슬롯 CONFIRM, n={n} — DB 수정 대기")
+            print(f"[Scan] Slot CONFIRM, n={n} — waiting for DB update")
     else:
         _send_arduino("PROGRESS:0")
         print("[Scan] WARN: Scan failed or canceled by user.")
@@ -179,7 +173,7 @@ def arduino_listener():
                     if line:
                         process_line(line)
             except Exception as e:
-                print(f"[Serial] 오류: {e}")
+                print(f"[Serial] Error: {e}")
         time.sleep(0.05)
 
 
@@ -201,7 +195,7 @@ def process_line(line: str):
     elif line == "INBOUND_CANCEL":
         _pending["scan_active"] = False
         _pending.clear()
-        print("[Inbound] 아두이노 강제 취소 수신")
+        print("[Inbound] Force cancel received from Arduino")
 
     # 3. 입고 무게 확정
     elif line.startswith("CONFIRM_WEIGHT:"):
@@ -223,7 +217,7 @@ def process_line(line: str):
         database.resolve_slot_confirm()
         _pending.clear()
         _send_arduino("INBOUND_COMPLETE")
-        print("[Inbound] 세션 종료 — 평균 무게 갱신 완료")
+        print("[Inbound] Session ended — average weight updated")
 
     # 5. 출고 요청 시작 (초기값 수신)
     # 포맷: OUTBOUND_REQ:W:{weight},D:{distance}
@@ -240,9 +234,9 @@ def process_line(line: str):
             _pending["outbound_d_init"] = d_init
             
             _send_arduino("REMOVE_ITEM")
-            print(f"[Outbound] 시작 - 초기무게={w_init}g, 초기거리={d_init}cm")
+            print(f"[Outbound] Start - initial weight={w_init}g, initial distance={d_init}cm")
         except Exception as e:
-            print(f"[Outbound] 시작 데이터 파싱 에러: {e}")
+            print(f"[Outbound] Start data parsing error: {e}")
 
     # 6. 출고 요청 종료 및 비교 분석
     # 포맷: OUTBOUND_FINAL:W:{weight},D:{distance}
@@ -258,13 +252,13 @@ def process_line(line: str):
             delta_w = w_init - w_final
             delta_d = abs(d_final - d_init)
             
-            print(f"[Outbound] 종료 비교 - w_diff={delta_w:.1f}g, d_diff={delta_d:.1f}cm")
+            print(f"[Outbound] Final comparison - w_diff={delta_w:.1f}g, d_diff={delta_d:.1f}cm")
             
             if delta_w < 5.0:
                 # 무게 변화 없음 -> 그대로 복귀
                 database.resolve_slot_confirm()
                 _send_arduino("OUTBOUND_FIFO_OK")
-                print("[Outbound] 무게 감소량이 미미하여 취소 처리합니다.")
+                print("[Outbound] Weight change negligible — treating as cancelled.")
             else:
                 # 꺼내간 개수 계산 (슬롯 고유 무게 우선, 없으면 DB 평균 사용)
                 unit_weight = database.get_slot_base_weight()
@@ -294,16 +288,16 @@ def process_line(line: str):
                     database.mark_slot_confirm(removed_qty, "OUTBOUND")
                     tokens = database.get_all_tokens()
                     fcm.send_push(
-                        "출고 순서 확인 필요",
-                        f"FIFO 순서에 맞지 않는 출고가 감지됐습니다. ({removed_qty}개) 앱에서 확인해주세요.",
+                        "Outbound order check required",
+                        f"Out-of-order FIFO removal detected. ({removed_qty} items) Please check the app.",
                         tokens,
                     )
                     _send_arduino(f"OUTBOUND_CONFIRM_ERR:{removed_qty}")
-                    print(f"[Outbound] FIFO 순서 위반 (CONFIRM) - {removed_qty}개, RED LED 경고")
+                    print(f"[Outbound] FIFO order violation (CONFIRM) - {removed_qty} items, RED LED warning")
             
             _pending.clear()
         except Exception as e:
-            print(f"[Outbound] 종료 데이터 파싱 에러: {e}")
+            print(f"[Outbound] Final data parsing error: {e}")
             _send_arduino("OUTBOUND_FIFO_OK")
 
     # 7. 온습도 파싱
@@ -318,7 +312,7 @@ def process_line(line: str):
                     latest_hum = float(part.split("H:")[1])
             print(f"[Env] Temp={latest_temp}°C, Humidity={latest_hum}%")
         except Exception as e:
-            print(f"[Env] 데이터 파싱 에러: {e}")
+            print(f"[Env] Data parsing error: {e}")
 
 
 # ── APScheduler: 유통기한 알림 ──────────────────────────
@@ -329,7 +323,7 @@ def expiry_alert_job():
     items = database.get_expiring_foods(days=3)
     if items:
         database.log_notification("EXPIRY_ALERT")
-        print(f"[Scheduler] 유통기한 임박 {len(items)}개")
+        print(f"[Scheduler] {len(items)} items expiring soon")
 
 
 # ── Flask API ──────────────────────────────────────────
@@ -521,5 +515,5 @@ if __name__ == "__main__":
     scheduler.add_job(expiry_alert_job, "cron", hour="9,15", minute=0)
     scheduler.start()
 
-    print("[Server] http://0.0.0.0:5000 시작")
+    print("[Server] Starting http://0.0.0.0:5000")
     app.run(host="0.0.0.0", port=5000)
