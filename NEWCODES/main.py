@@ -311,13 +311,13 @@ def process_line(line: str):
             w_final = float(sub_parts[0].split("W:")[1])
             d_final = float(sub_parts[1].split("D:")[1])
             
-            w_init = 187.4
+            w_init = _pending.get("outbound_w_init", 0.0)
             d_init = _pending.get("outbound_d_init", 0.0)
             
             delta_w = w_init - w_final
             delta_d = abs(d_final - d_init)
             
-            print(f"[Outbound] Final comparison - w_diff=0g, d_diff={delta_d:.1f}cm")
+            print(f"[Outbound] Final comparison - w_diff={delta_w:.1f}g, d_diff={delta_d:.1f}cm")
             
             if delta_w < 5.0:
                 # 무게 변화 없음 -> 그대로 복귀
