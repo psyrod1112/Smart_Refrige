@@ -54,7 +54,6 @@ int           current_count   = 0;
 float         base_weight     = 0.0f;
 float         measured_weight = 0.0f;
 unsigned long s2_tare_at      = 0;
-unsigned long s2_dummy_active = 0;
 bool          isFifoStatus    = true;
 int           display_position = 0;
 
@@ -434,7 +433,7 @@ int main(void) {
                 
                 if (currentState == S_IDLE) {
                     currentState = S_OUTBOUND_WAIT_INPUT;
-                    float w_init = 186.8f;
+                    float w_init = scale.get_units(10);
                     if (w_init < 0) w_init = 0;
                     float d_init = readDistance();
                     char w_str[8], d_str[8];
@@ -445,7 +444,7 @@ int main(void) {
                     UART_print(out_buf);
                 } else if (currentState == S_OUTBOUND_1) {
                     currentState = S_OUTBOUND_WAIT_RESULT;
-                    float w_final = 186.8f;
+                    float w_final = scale.get_units(10);
                     if (w_final < 0) w_final = 0;
                     float d_final = readDistance();
                     char w_str[8], d_str[8];
@@ -490,7 +489,6 @@ int main(void) {
                 s2_tare_at = 0;
                 scale.tare();
                 beep(100);
-                s2_dummy_active = millis() + 3000;
                 lastWeightUpdate = millis();
                 char tare_status[32];
                 if (isFifoStatus) sprintf(tare_status, "FIFO POS:%d", display_position);
@@ -500,7 +498,7 @@ int main(void) {
 
             if (millis() - lastWeightUpdate > 500) { // 500ms마다 5회 평균 (노이즈 감소)
                 lastWeightUpdate = millis();
-                float current_weight = (s2_dummy_active != 0 && millis() >= s2_dummy_active) ? 187.2f : 0.0f;
+                float current_weight = scale.get_units(5);
                 if (current_weight < 0) current_weight = 0;
 
                 float diff = fabs(current_weight - base_weight);
