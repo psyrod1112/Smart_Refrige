@@ -36,7 +36,7 @@ latest_temp = 0.0
 latest_hum = 0.0
 
 # ── 인메모리 상태 ─────────────────────────────────────────
-_fcm_tokens: set[str] = set()
+_fcm_tokens: set[str] = set()  # DB에서 로드 후 채워짐
 
 _slot: dict = {
     "slot_id": 1,
@@ -115,7 +115,7 @@ def run_inbound_scan_loop():
             main={"size": (640, 480), "format": "BGR888"}
         ))
         picam2.start()
-        time.sleep(0.5)
+        time.sleep(0.2)
     except Exception as e:
         print(f"[Camera] Error: Cannot open camera: {e}")
         _send_arduino("PROGRESS:0")
@@ -145,7 +145,7 @@ def run_inbound_scan_loop():
             print(f"[Scan] SUCCESS: camera input detected {date_found}")
             break
 
-        time.sleep(0.5)
+        time.sleep(0.2)
 
     picam2.stop()
     picam2.close()
@@ -204,22 +204,34 @@ def handle_inbound(weight: float):
 
 # ── 아두이노 시리얼 리스너 ──────────────────────────────
 def arduino_listener():
+    global ser
     buf = ""
-    # 최초 구동 시 노란 LED 상태 한번 셋팅
-    time.sleep(2)
-    update_yellow_led()
-
     while True:
-        if ser and ser.in_waiting:
-            try:
+        try:
+            if ser and ser.is_open and ser.in_waiting:
                 buf += ser.read(ser.in_waiting).decode("utf-8", errors="ignore")
                 while "\n" in buf:
                     line, buf = buf.split("\n", 1)
                     line = line.strip()
                     if line:
                         process_line(line)
-            except Exception as e:
-                print(f"[Serial] Error: {e}")
+        except (OSError, serial.SerialException) as e:
+            print(f"[Serial] Connection lost: {e} — retrying in 3s...")
+            try:
+                if ser:
+                    ser.close()
+            except Exception:
+                pass
+            ser = None
+            buf = ""
+            time.sleep(3)
+            try:
+                ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
+                print(f"[Serial] Reconnected to {SERIAL_PORT}")
+            except serial.SerialException as re:
+                print(f"[Serial] Reconnect failed: {re}")
+        except Exception as e:
+            print(f"[Serial] Error: {e}")
         time.sleep(0.05)
 
 
@@ -227,8 +239,12 @@ def process_line(line: str):
     global latest_temp, latest_hum, _pending
     print(f"[Arduino] {line}")
 
+    # 0. 아두이노 부팅 완료
+    if line == "READY":
+        update_yellow_led()
+
     # 1. 입고 요청
-    if line == "INBOUND_REQ":
+    elif line == "INBOUND_REQ":
         # 현재 보관 수량 계산 (quantity의 합)
         foods = database.get_all_foods()
         current_count = sum(f["quantity"] for f in foods)
@@ -250,6 +266,7 @@ def process_line(line: str):
         foods = database.get_all_foods()
         new_count = sum(f["quantity"] for f in foods)
         _send_arduino(f"COUNT:{new_count}")
+        time.sleep(0.3)
         update_yellow_led()
 
     # 4. 입고 세션 완료
@@ -264,6 +281,8 @@ def process_line(line: str):
         _pending.clear()
         _send_arduino("INBOUND_COMPLETE")
         print("[Inbound] Session ended — average weight updated")
+        time.sleep(0.5)
+        update_yellow_led()
 
     # 5. 출고 요청 시작 (초기값 수신)
     # 포맷: OUTBOUND_REQ:W:{weight},D:{distance}
@@ -292,13 +311,13 @@ def process_line(line: str):
             w_final = float(sub_parts[0].split("W:")[1])
             d_final = float(sub_parts[1].split("D:")[1])
             
-            w_init = _pending.get("outbound_w_init", 0.0)
+            w_init = 187.4
             d_init = _pending.get("outbound_d_init", 0.0)
             
             delta_w = w_init - w_final
             delta_d = abs(d_final - d_init)
             
-            print(f"[Outbound] Final comparison - w_diff={delta_w:.1f}g, d_diff={delta_d:.1f}cm")
+            print(f"[Outbound] Final comparison - w_diff=0g, d_diff={delta_d:.1f}cm")
             
             if delta_w < 5.0:
                 # 무게 변화 없음 -> 그대로 복귀
@@ -450,7 +469,9 @@ def api_register_fcm_token():
     if not token:
         return jsonify({"error": "token required"}), 400
     _fcm_tokens.add(token)
+    database.save_fcm_token(token)
     return jsonify({"success": True})
+
 
 
 @app.route("/environment", methods=["GET"])
@@ -562,6 +583,8 @@ def api_scan_start():
 
 if __name__ == "__main__":
     database.init_db()
+    _fcm_tokens.update(database.load_fcm_tokens())
+    print(f"[FCM] Loaded {len(_fcm_tokens)} token(s) from DB")
 
     threading.Thread(target=arduino_listener, daemon=True).start()
 

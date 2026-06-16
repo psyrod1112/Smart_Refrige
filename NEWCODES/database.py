@@ -29,6 +29,10 @@ def init_db():
                 registered_at TEXT,
                 deleted_at    TEXT
             );
+            CREATE TABLE IF NOT EXISTS fcm_tokens (
+                token TEXT PRIMARY KEY,
+                registered_at TEXT NOT NULL
+            );
         """)
         conn.commit()
 
@@ -153,5 +157,21 @@ def get_expiring_foods(days: int = 3) -> list[dict]:
             (cutoff,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── FCM 토큰 ──────────────────────────────────────────
+def save_fcm_token(token: str):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO fcm_tokens (token, registered_at) VALUES (?, ?)",
+            (token, datetime.now().isoformat()),
+        )
+        conn.commit()
+
+
+def load_fcm_tokens() -> set[str]:
+    with get_db() as conn:
+        rows = conn.execute("SELECT token FROM fcm_tokens").fetchall()
+    return {r["token"] for r in rows}
 
 
