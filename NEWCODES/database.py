@@ -61,17 +61,7 @@ def get_all_foods() -> list[dict]:
                WHERE deleted_at IS NULL
                ORDER BY expiry_date ASC"""
         ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def check_fifo(new_expiry: str) -> bool:
-    foods = get_all_foods()
-    valid_dates = [f["expiry_date"] for f in foods if f.get("expiry_date")]
-    if not valid_dates:
-        return True
-    earliest_expiry = min(valid_dates)
-    return new_expiry >= earliest_expiry
-
+    return [{**dict(r), 'slot_number': i + 1} for i, r in enumerate(rows)]
 
 
 def update_food(food_id: int, fields: dict) -> bool:

@@ -173,11 +173,11 @@ Future<void> updateFood(
   }
 }
 
-Future<void> outgoFood(int id, {double delta = 0}) async {
+Future<void> outgoFood(int id) async {
   final res = await http.post(
     _uri('/outbound/confirm'),
     headers: {'Content-Type': 'application/json'},
-    body: jsonEncode({'food_id': id, 'delta': delta}),
+    body: jsonEncode({'food_id': id}),
   );
   if (res.statusCode != 200) {
     throw Exception('출고 확인 실패 (${res.statusCode})');

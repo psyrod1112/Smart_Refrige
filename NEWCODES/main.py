@@ -32,6 +32,7 @@ except serial.SerialException as e:
     ser = None
 
 _pending: dict = {}  # 스캔 결과 임시 보관 (유통기한 등 세션 변수)
+_pending_lock = threading.Lock()
 latest_temp = 0.0
 latest_hum = 0.0
 
@@ -101,10 +102,11 @@ def update_yellow_led():
 # ── 실시간 카메라 스캔 스레드 ──────────────────────────
 def run_inbound_scan_loop():
     global _pending
-    _pending["scan_active"] = True
-    _pending["expiry_date"] = None
-    _pending["manual_input"] = False
-    _pending["weights"] = []
+    with _pending_lock:
+        _pending["scan_active"] = True
+        _pending["expiry_date"] = None
+        _pending["manual_input"] = False
+        _pending["weights"] = []
 
     print("[Scan] Real-time camera scan thread started.")
 
@@ -130,8 +132,10 @@ def run_inbound_scan_loop():
             break
 
         # 1. 어플 수동 등록 체크
-        if _pending.get("manual_input"):
-            date_found = _pending.get("expiry_date")
+        with _pending_lock:
+            if _pending.get("manual_input"):
+                date_found = _pending.get("expiry_date")
+        if date_found:
             print(f"[Scan] SUCCESS: app input detected {date_found}")
             break
 
@@ -149,7 +153,8 @@ def run_inbound_scan_loop():
 
     picam2.stop()
     picam2.close()
-    _pending["scan_active"] = False
+    with _pending_lock:
+        _pending["scan_active"] = False
 
     # 스캔 종료 처리
     if date_found:
@@ -179,19 +184,23 @@ def run_inbound_scan_loop():
 # ── 입고 / 출고 처리 ─────────────────────────────────────
 def handle_inbound(weight: float):
     global _pending
-    expiry = _pending.get("expiry_date")
+    with _pending_lock:
+        expiry = _pending.get("expiry_date")
+        food_name = _pending.get("food_name", "Unknown")
+        quantity = int(_pending.get("quantity", 1) or 1)
     if not expiry:
         print("[Inbound] ERROR: Expiry date is not set.")
         return
 
     food_id = database.insert_food(
         food_id=f"F{uuid.uuid4().hex[:8]}",
-        name=_pending.get("food_name", "Unknown"),
+        name=food_name,
         expiry_date=expiry,
         weight_gram=weight,
-        quantity=int(_pending.get("quantity", 1) or 1),
+        quantity=quantity,
     )
-    _pending["last_inbound_food_id"] = food_id
+    with _pending_lock:
+        _pending["last_inbound_food_id"] = food_id
     tokens = list(_fcm_tokens)
     fcm.send_push(
         "새 식품이 등록되었습니다",
@@ -255,8 +264,9 @@ def process_line(line: str):
 
     # 2. 입고 취소
     elif line == "INBOUND_CANCEL":
-        _pending["scan_active"] = False
-        _pending.clear()
+        with _pending_lock:
+            _pending["scan_active"] = False
+            _pending.clear()
         print("[Inbound] Force cancel received from Arduino")
 
     # 3. 입고 무게 확정
@@ -278,7 +288,8 @@ def process_line(line: str):
             if total_qty > 0:
                 _slot["base_weight_gram"] = total_weight / total_qty
         _resolve_slot()
-        _pending.clear()
+        with _pending_lock:
+            _pending.clear()
         _send_arduino("INBOUND_COMPLETE")
         print("[Inbound] Session ended — average weight updated")
         time.sleep(0.5)
@@ -295,9 +306,9 @@ def process_line(line: str):
             w_init = float(sub_parts[0].split("W:")[1])
             d_init = float(sub_parts[1].split("D:")[1])
             
-            _pending["outbound_w_init"] = w_init
-            _pending["outbound_d_init"] = d_init
-            
+            with _pending_lock:
+                _pending["outbound_w_init"] = w_init
+                _pending["outbound_d_init"] = d_init
             _send_arduino("REMOVE_ITEM")
             print(f"[Outbound] Start - initial weight={w_init}g, initial distance={d_init}cm")
         except Exception as e:
@@ -311,8 +322,9 @@ def process_line(line: str):
             w_final = float(sub_parts[0].split("W:")[1])
             d_final = float(sub_parts[1].split("D:")[1])
             
-            w_init = _pending.get("outbound_w_init", 0.0)
-            d_init = _pending.get("outbound_d_init", 0.0)
+            with _pending_lock:
+                w_init = _pending.get("outbound_w_init", 0.0)
+                d_init = _pending.get("outbound_d_init", 0.0)
             
             delta_w = w_init - w_final
             delta_d = abs(d_final - d_init)
@@ -360,7 +372,8 @@ def process_line(line: str):
                     _send_arduino(f"OUTBOUND_CONFIRM_ERR:{removed_qty}")
                     print(f"[Outbound] FIFO order violation (CONFIRM) - {removed_qty} items, RED LED warning")
             
-            _pending.clear()
+            with _pending_lock:
+                _pending.clear()
         except Exception as e:
             print(f"[Outbound] Final data parsing error: {e}")
             _send_arduino("OUTBOUND_FIFO_OK")
@@ -399,17 +412,6 @@ def expiry_alert_job():
 
 
 # ── Flask API ──────────────────────────────────────────
-@app.route("/scan", methods=["POST"])
-def api_scan():
-    """외부 앱 또는 버튼에서 카메라 스캔 요청"""
-    success = False
-    expiry = camera.scan_expiry_date()
-    if expiry:
-        _pending["expiry_date"] = expiry
-        success = True
-    return jsonify({"success": success, "expiry_date": expiry})
-
-
 @app.route("/inbound/manual", methods=["POST"])
 def api_manual_inbound():
     """앱에서 수동으로 유통기한을 입력하는 엔드포인트"""
@@ -435,12 +437,13 @@ def api_manual_inbound():
         update_yellow_led()
         return jsonify({"success": True, "food_id": int(food_id)})
 
-    _pending["expiry_date"] = expiry
-    _pending["manual_input"] = True
-    if food_name:
-        _pending["food_name"] = food_name
-    if quantity is not None:
-        _pending["quantity"] = quantity
+    with _pending_lock:
+        _pending["expiry_date"] = expiry
+        _pending["manual_input"] = True
+        if food_name:
+            _pending["food_name"] = food_name
+        if quantity is not None:
+            _pending["quantity"] = quantity
     return jsonify({"success": True})
 
 
@@ -523,7 +526,7 @@ def api_update_food(food_id):
 
 @app.route("/outbound/confirm", methods=["POST"])
 def api_confirm_outbound():
-    data = request.json
+    data = request.json or {}
     food_id = data.get("food_id")
     new_qty = None
     if food_id is not None:
